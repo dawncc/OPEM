@@ -95,11 +95,13 @@ export default function Home() {
       </section>
 
       <section className="section deploy-section" id="deploy">
-        <div className="deploy-copy"><p className="eyebrow">Deployment boundary</p><h2>展示站上 Sites，<br />Memory 服务留在你的网络。</h2><p>当前 Sites 版本用于产品说明和界面展示。FastAPI、Worker 与数据库需要部署在局域网服务器、VPN 或其他可运行 Python 的环境中。</p><a className="button primary" href="https://github.com/dawncc/OPEM">查看部署文档 ↗</a></div>
-        <div className="deploy-stack">
-          <article><span className="stack-badge cloud">Sites</span><div><strong>公开展示层</strong><p>产品介绍 · 架构 · 真实界面</p></div><b>已适配</b></article>
-          <div className="stack-connector"><span>HTTP / private network</span></div>
-          <article><span className="stack-badge server">PY</span><div><strong>Memory Server</strong><p>FastAPI · Worker · SQLite / PostgreSQL</p></div><b>独立部署</b></article>
+        <div className="deploy-copy"><p className="eyebrow">Deploy in three steps</p><h2>十分钟启动，<br />记忆留在你的网络。</h2><p>个人电脑可用 SQLite 轻量启动；长期运行推荐 Docker Compose 与 PostgreSQL/pgvector。服务默认面向可信局域网、VPN 或私有网络，不应直接暴露到公网。</p><div className="deploy-actions"><a className="button primary" href="https://github.com/dawncc/OPEM#quick-start-local-sqlite">本机快速开始 ↗</a><a className="button" href="https://github.com/dawncc/OPEM#deploy-with-docker-compose">Docker Compose ↗</a></div></div>
+        <div className="deploy-panel">
+          <div className="deploy-choice"><span>01</span><div><strong>选择存储</strong><p><b>SQLite</b> 适合个人试用，<b>PostgreSQL</b> 适合持续运行与向量召回。</p></div></div>
+          <div className="deploy-choice"><span>02</span><div><strong>启动服务</strong><p>API、管理界面和异步 Worker 一起运行，Docker Compose 可一次启动完整栈。</p></div></div>
+          <div className="deploy-command"><span>Terminal</span><code>cd deploy &amp;&amp; docker compose up --build -d</code></div>
+          <div className="deploy-choice"><span>03</span><div><strong>连接每台 Codex</strong><p>通过 MCP Bridge 指向同一个 Memory Server；离线事件会进入本地队列并自动补传。</p></div></div>
+          <div className="security-note"><span aria-hidden="true">●</span><div><strong>安全边界</strong><p>当前版本未内置 TLS、鉴权或租户隔离，仅部署在可信 LAN / VPN 内。</p></div></div>
         </div>
       </section>
 

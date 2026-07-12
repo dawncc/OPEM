@@ -16,6 +16,8 @@ test("server-renders the OPEM showcase", async () => {
   assert.match(html, /<title>OPEM/);
   assert.match(html, /让每一次 Codex 工作/);
   assert.match(html, /Session Trace/);
-  assert.match(html, /展示站上 Sites/);
+  assert.match(html, /十分钟启动/);
+  assert.match(html, /docker compose up --build -d/);
+  assert.match(html, /安全边界/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/);
 });
