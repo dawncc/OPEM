@@ -1,5 +1,5 @@
 [project]
-name = "codex-lan-memory"
+name = "OPEM"
 version = "0.1.0"
 license = "MIT"
 requires-python = ">=3.12"

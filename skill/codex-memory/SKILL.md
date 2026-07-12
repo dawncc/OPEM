@@ -3,7 +3,7 @@ name: codex-memory
 description: Proactively recall and save durable project knowledge, complete chat, and tool execution outcomes through the codex-memory MCP server. Use when starting or resuming substantial project work, asking what happened before, making a decision, discovering a reusable learning, solving a recurring problem, archiving tool results, or ending or compacting a Codex session.
 ---
 
-# Onevom — One Personal Evolving Memory System
+# OPEM — One Personal Evolving Memory System
 
 Use the `codex_memory` MCP tools to preserve durable knowledge and a complete, separately archived conversation history.
 

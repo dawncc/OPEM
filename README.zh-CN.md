@@ -1,4 +1,4 @@
-# Onevom
+# OPEM
 
 **One Personal Evolving Memory System（个人演进记忆系统）**
 
@@ -6,11 +6,11 @@
 
 [Sites 在线展示](https://codex-lan-memory.dawn-cc022.chatgpt.site) · 仅所有者可访问
 
-Onevom 是 **One Personal Evolving Memory System** 的缩写。它归个人所有，汇总多个服务器和 Codex 实例产生的完整对话、长期观察及工具执行结果，将其沉淀为可召回的长期知识，并在持续使用中不断演进。
+OPEM 是 **One Personal Evolving Memory System** 的缩写。它归个人所有，汇总多个服务器和 Codex 实例产生的完整对话、长期观察及工具执行结果，将其沉淀为可召回的长期知识，并在持续使用中不断演进。
 
 > MVP 边界：可信局域网 HTTP、单台共享服务器、SQLite 或 PostgreSQL，暂不包含鉴权与 TLS。
 
-![Onevom 系统概览](docs/images/overview.png)
+![OPEM 系统概览](docs/images/overview.png)
 
 ## 核心能力
 
@@ -81,8 +81,8 @@ flowchart LR
 环境要求：Python 3.12 或更高版本。
 
 ```bash
-git clone git@github.com:dawncc/codex-lan-memory.git
-cd codex-lan-memory
+git clone git@github.com:dawncc/OPEM.git
+cd OPEM
 python -m venv .venv
 ```
 

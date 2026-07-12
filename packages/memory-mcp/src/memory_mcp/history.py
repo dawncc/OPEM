@@ -1,4 +1,4 @@
-"""Synchronize completed Codex rollout turns to Codex LAN Memory."""
+"""Synchronize completed Codex rollout turns to OPEM."""
 from __future__ import annotations
 
 import argparse

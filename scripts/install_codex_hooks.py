@@ -1,4 +1,4 @@
-"""Install or update Onevom hooks without removing other hooks."""
+"""Install or update OPEM hooks without removing other hooks."""
 from __future__ import annotations
 
 import argparse
@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 EVENTS = ("UserPromptSubmit", "PostToolUse", "PreCompact", "Stop")
-MARKER = "codex-lan-memory/hooks/capture.py"
+MARKER = "OPEM/hooks/capture.py"
 
 
 def quoted(path: Path) -> str:
@@ -42,7 +42,7 @@ def main() -> int:
         groups[:] = [group for group in groups if group.get("hooks")]
         groups.append({"hooks": [{
             "type": "command", "command": command, "timeout": 10,
-            "statusMessage": f"onevom: capture {event}",
+            "statusMessage": f"OPEM: capture {event}",
         }]})
     hooks_path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

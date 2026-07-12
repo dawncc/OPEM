@@ -33,19 +33,19 @@ const flow = [
 const screenshots = [
   {
     src: "/screenshots/session-trace.png",
-    alt: "Onevom Session Trace 页面",
+    alt: "OPEM Session Trace 页面",
     title: "请求级执行链路",
     copy: "一眼识别每轮请求中的 Codex、测试、命令行、文件和网络调用。",
   },
   {
     src: "/screenshots/tool-archive.png",
-    alt: "Onevom 工具归档页面",
+    alt: "OPEM 工具归档页面",
     title: "工具结果完整归档",
     copy: "成功、失败与待确认状态分开呈现，原始输出始终可追溯。",
   },
   {
     src: "/screenshots/failure-faq.png",
-    alt: "Onevom 失败 FAQ 页面",
+    alt: "OPEM 失败 FAQ 页面",
     title: "失败自动转化为 FAQ",
     copy: "保留真实证据，给出分类和处理方向，不把推测写成事实。",
   },
@@ -55,9 +55,9 @@ export default function Home() {
   return (
     <main>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="Onevom 首页">
+        <a className="brand" href="#top" aria-label="OPEM 首页">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span>Onevom</span>
+          <span>OPEM</span>
         </a>
         <nav aria-label="页面导航">
           <a href="#features">能力</a>
@@ -65,7 +65,7 @@ export default function Home() {
           <a href="#screens">界面</a>
           <a href="#deploy">部署</a>
         </nav>
-        <a className="header-link" href="https://github.com/dawncc/codex-lan-memory">GitHub ↗</a>
+        <a className="header-link" href="https://github.com/dawncc/OPEM">GitHub ↗</a>
       </header>
 
       <section className="hero" id="top">
@@ -77,7 +77,7 @@ export default function Home() {
           <p className="hero-lead">把分散在不同服务器上的完整对话、工具结果和关键决策汇总到统一 Memory Server，并以可追溯的方式召回。</p>
           <div className="hero-actions">
             <a className="button primary" href="#screens">查看真实界面</a>
-            <a className="button" href="https://github.com/dawncc/codex-lan-memory#quick-start-local-sqlite">本机开始部署</a>
+            <a className="button" href="https://github.com/dawncc/OPEM#quick-start-local-sqlite">本机开始部署</a>
           </div>
           <div className="hero-facts" aria-label="项目能力概览">
             <div><strong>5</strong><span>MCP 工具</span></div>
@@ -89,7 +89,7 @@ export default function Home() {
         <div className="hero-visual">
           <div className="visual-window">
             <div className="window-bar"><span className="window-dots"><i /><i /><i /></span><span>memory://overview</span><b>LIVE</b></div>
-            <Image src="/screenshots/overview.png" alt="Onevom 系统概览" width={1265} height={712} priority />
+            <Image src="/screenshots/overview.png" alt="OPEM 系统概览" width={1265} height={712} priority />
           </div>
           <div className="float-card float-recall"><span>Recall</span><strong>历史上下文已命中</strong><small>BM25 · fuzzy · metadata</small></div>
           <div className="float-card float-trace"><span>Trace</span><strong>848 ms</strong><small>4 次工具调用</small></div>
@@ -116,7 +116,7 @@ export default function Home() {
       </section>
 
       <section className="section deploy-section" id="deploy">
-        <div className="deploy-copy"><p className="eyebrow">Deployment boundary</p><h2>展示站上 Sites，<br />Memory 服务留在你的网络。</h2><p>当前 Sites 版本用于产品说明和界面展示。FastAPI、Worker 与数据库需要部署在局域网服务器、VPN 或其他可运行 Python 的环境中。</p><a className="button primary" href="https://github.com/dawncc/codex-lan-memory">查看部署文档 ↗</a></div>
+        <div className="deploy-copy"><p className="eyebrow">Deployment boundary</p><h2>展示站上 Sites，<br />Memory 服务留在你的网络。</h2><p>当前 Sites 版本用于产品说明和界面展示。FastAPI、Worker 与数据库需要部署在局域网服务器、VPN 或其他可运行 Python 的环境中。</p><a className="button primary" href="https://github.com/dawncc/OPEM">查看部署文档 ↗</a></div>
         <div className="deploy-stack">
           <article><span className="stack-badge cloud">Sites</span><div><strong>公开展示层</strong><p>产品介绍 · 架构 · 真实界面</p></div><b>已适配</b></article>
           <div className="stack-connector"><span>HTTP / private network</span></div>
@@ -124,7 +124,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer><div className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><span>Onevom</span></div><p>One Personal Evolving Memory System</p><a href="https://github.com/dawncc/codex-lan-memory">Source on GitHub ↗</a></footer>
+      <footer><div className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><span>OPEM</span></div><p>One Personal Evolving Memory System</p><a href="https://github.com/dawncc/OPEM">Source on GitHub ↗</a></footer>
     </main>
   );
 }

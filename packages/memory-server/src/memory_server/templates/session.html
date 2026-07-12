@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}Session {{ session.external_session_id }} · Onevom{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Session {{ session.external_session_id }} · OPEM{% endblock %}{% block content %}
 <div class="breadcrumb"><a href="/">概览</a><span>›</span><a href="/projects/{{ session.project.id }}">{{ session.project.name }}</a><span>›</span><span>Session</span></div>
 <section class="hero"><div class="hero-copy"><p class="eyebrow">Conversation</p><h1 class="page-title detail-title">{{ session.external_session_id }}</h1><div class="metadata"><span class="badge">{{ session.status }}</span><span class="meta-chip">{{ session.source_host or '未知来源' }}</span><span class="meta-chip">开始于 {{ session.started_at|pretty_datetime }}</span></div></div><div class="actions"><a class="button primary" href="/traces/{{ session.id }}">查看执行路径</a></div></section>
 

@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "python /absolute/path/to/hooks/capture.py",
-            "statusMessage": "onevom: capturing request"
+            "statusMessage": "OPEM: capturing request"
           }
         ]
       }
@@ -17,7 +17,7 @@
           {
             "type": "command",
             "command": "python /absolute/path/to/hooks/capture.py",
-            "statusMessage": "onevom: archiving tool result"
+            "statusMessage": "OPEM: archiving tool result"
           }
         ]
       }
@@ -28,7 +28,7 @@
           {
             "type": "command",
             "command": "python /absolute/path/to/hooks/capture.py",
-            "statusMessage": "onevom: saving pre-compaction summary"
+            "statusMessage": "OPEM: saving pre-compaction summary"
           }
         ]
       }
@@ -39,7 +39,7 @@
           {
             "type": "command",
             "command": "python /absolute/path/to/hooks/capture.py",
-            "statusMessage": "onevom: saving session summary"
+            "statusMessage": "OPEM: saving session summary"
           }
         ]
       }

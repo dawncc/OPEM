@@ -33,10 +33,10 @@ def test_proactive_memory_becomes_recallable(tmp_path, monkeypatch):
         observation, duplicate = create_observation(
             db,
             ObservationCreate(
-                project="codex-lan-memory",
+                project="OPEM",
                 kind="decision",
                 content=(
-                    "Use the stable project identifier codex-lan-memory for every memory call. "
+                    "Use the stable project identifier OPEM for every memory call. "
                     "This prevents recall misses caused by path and display-name aliases."
                 ),
                 concepts=["project identity", "recall"],
@@ -52,10 +52,10 @@ def test_proactive_memory_becomes_recallable(tmp_path, monkeypatch):
     worker_module.process(job_id)
 
     with Session(engine) as db:
-        results = recall(db, "stable project identifier recall aliases", "codex-lan-memory", 5)
+        results = recall(db, "stable project identifier recall aliases", "OPEM", 5)
         assert results
         assert results[0].memory_type == "decision"
         assert results[0].importance == 5
-        assert "codex-lan-memory" in results[0].content
+        assert "OPEM" in results[0].content
         assert results[0].source_observations == [observation.id]
         assert recall(db, "stable project identifier", "another-project", 5) == []

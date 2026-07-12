@@ -1,4 +1,4 @@
-# Onevom
+# OPEM
 
 **One Personal Evolving Memory System**
 
@@ -6,11 +6,11 @@
 
 [Live Sites showcase](https://codex-lan-memory.dawn-cc022.chatgpt.site) · Owner-only deployment
 
-Onevom, short for **One Personal Evolving Memory System**, aggregates conversations, durable observations, and tool outcomes from Codex instances across multiple machines, consolidates them into long-term knowledge, supports contextual recall, and evolves as its owner continues to use it.
+OPEM, short for **One Personal Evolving Memory System**, aggregates conversations, durable observations, and tool outcomes from Codex instances across multiple machines, consolidates them into long-term knowledge, supports contextual recall, and evolves as its owner continues to use it.
 
 > MVP scope: trusted LAN HTTP, one shared server, SQLite or PostgreSQL, no authentication or TLS.
 
-![Onevom overview](docs/images/overview.png)
+![OPEM overview](docs/images/overview.png)
 
 ## Highlights
 
@@ -81,8 +81,8 @@ The server keeps raw `ChatMessage` and `Observation` records independent from ge
 Requirements: Python 3.12 or newer.
 
 ```bash
-git clone git@github.com:dawncc/codex-lan-memory.git
-cd codex-lan-memory
+git clone git@github.com:dawncc/OPEM.git
+cd OPEM
 python -m venv .venv
 ```
 

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Onevom"
+  display_name: "OPEM"
   short_description: "Proactively recall and save durable project memory"
   default_prompt: "Recall relevant project memory before substantial work, proactively save durable decisions and reusable learnings, and preserve the complete session with source context."

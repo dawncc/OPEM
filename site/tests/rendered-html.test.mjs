@@ -8,12 +8,12 @@ async function render() {
   return worker.fetch(new Request("http://localhost/", { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("server-renders the Onevom showcase", async () => {
+test("server-renders the OPEM showcase", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>Onevom/);
+  assert.match(html, /<title>OPEM/);
   assert.match(html, /让每一次 Codex 工作/);
   assert.match(html, /Session Trace/);
   assert.match(html, /展示站上 Sites/);

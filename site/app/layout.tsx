@@ -12,11 +12,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   return {
-    title: "Onevom · One Personal Evolving Memory System",
+    title: "OPEM · One Personal Evolving Memory System",
     description: "归个人所有、汇聚多个服务器信息并在持续使用中自我演进的长期记忆系统。",
     metadataBase: new URL(origin),
-    openGraph: { title: "Onevom", description: "One Personal Evolving Memory System", type: "website", url: origin, images: ["/og.png"] },
-    twitter: { card: "summary_large_image", title: "Onevom", description: "One Personal Evolving Memory System", images: ["/og.png"] },
+    openGraph: { title: "OPEM", description: "One Personal Evolving Memory System", type: "website", url: origin, images: ["/og.png"] },
+    twitter: { card: "summary_large_image", title: "OPEM", description: "One Personal Evolving Memory System", images: ["/og.png"] },
   };
 }
 

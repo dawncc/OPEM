@@ -31,7 +31,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Onevom",
+    title="OPEM",
     description="One Personal Evolving Memory System",
     version="0.1.0",
     lifespan=lifespan,
