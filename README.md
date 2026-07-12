@@ -274,6 +274,10 @@ codex-memory-sync --server http://192.168.1.100:8000 --since 2026-07-01
 
 Only turns with a `task_complete` event are imported. The backfill uses the same turn, tool-call, and event identifiers as the real-time hooks, so reruns and hook/backfill overlap are idempotent. Legacy rows without event identifiers use role/content occurrence matching as a compatibility fallback. Rollout JSONL remains a best-effort local import source; real-time hooks are the supported primary capture path.
 
+## Design notes
+
+- [Cost control and context compression for multi-turn tasks (Chinese)](docs/context-cost-compression.md)
+
 ## Project layout
 
 ```text
