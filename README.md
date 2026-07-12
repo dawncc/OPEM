@@ -1,8 +1,141 @@
 # Codex LAN Memory
 
-Python MVP for submitting durable Codex observations over MCP, consolidating them into memories, recalling them with RAG-style search, and browsing them on a small LAN web UI.
+**English** | [简体中文](README.zh-CN.md)
 
-## Start the server
+[Live Sites showcase](https://codex-lan-memory.dawn-cc022.chatgpt.site) · Owner-only deployment
+
+A lightweight, self-hosted memory and trace system for Codex. Codex instances on different machines submit complete conversations, durable observations, and tool outcomes through a local MCP bridge. A shared Python server stores the raw history, consolidates long-term Memory, supports hybrid recall, and exposes a compact web UI.
+
+> MVP scope: trusted LAN HTTP, one shared server, SQLite or PostgreSQL, no authentication or TLS.
+
+![Codex LAN Memory overview](docs/images/overview.png)
+
+## Highlights
+
+- **Cross-machine collection** — multiple Codex CLI, Desktop, or Remote hosts write to one Memory Server.
+- **MCP-first integration** — submit, recall, end sessions, archive complete chat, and check health through five MCP tools.
+- **Raw history plus durable Memory** — the complete transcript remains available while reusable knowledge is compressed separately.
+- **Hybrid recall** — exact phrase, BM25, fuzzy, metadata, and optional vector similarity are fused with weighted RRF and deduplicated with MMR.
+- **Session Trace** — group each Session into user-led request paths and show Codex/tool nodes with measured or estimated timing.
+- **Tool archive and FAQ** — successful tools become recallable context; failed tools become evidence-backed FAQ entries.
+- **Daily summaries** — browse decisions, learnings, unresolved problems, and Memory highlights on a calendar.
+- **Small deployment footprint** — FastAPI, SQLAlchemy, one Worker, server-rendered pages, and SQLite or PostgreSQL/pgvector.
+
+## Screenshots
+
+### Session execution trace
+
+Request paths connect user messages, Codex responses, and tool calls. Test, shell, file, search, browser, network/MCP, database, and code tools use distinct styles.
+
+![Session execution trace](docs/images/session-trace.png)
+
+### Tool execution archive
+
+Every tool result is archived. Clear successes enter the Memory pipeline, failures enter the FAQ pipeline, and unknown outcomes remain raw-only.
+
+![Tool execution archive](docs/images/tool-archive.png)
+
+### Failure FAQ
+
+Failures retain the observed evidence, normalized category, remediation suggestion, stable signature, and a link to the source Session.
+
+![Failure FAQ](docs/images/failure-faq.png)
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Clients[Codex machines]
+        Codex[Codex CLI / Desktop / Remote]
+        Skill[Memory Skill]
+        MCP[Python stdio MCP bridge]
+        Queue[Local pending JSONL]
+        Codex --> Skill --> MCP
+        MCP --> Queue
+    end
+
+    MCP -->|LAN HTTP| API
+
+    subgraph Server[Shared Memory Server]
+        API[FastAPI]
+        DB[(SQLite or PostgreSQL + pgvector)]
+        Worker[Memory Worker]
+        Memory[Consolidated Memory]
+        UI[Jinja2 Web UI]
+        API --> DB
+        DB --> Worker --> Memory
+        DB --> UI
+        Memory --> UI
+    end
+
+    Memory -->|hybrid recall| API
+    API -->|chat-memory context| MCP
+```
+
+The server keeps raw `ChatMessage` and `Observation` records independent from generated `Memory`. Every generated Memory retains source Observation and Session links.
+
+## Quick start: local SQLite
+
+Requirements: Python 3.12 or newer.
+
+```bash
+git clone git@github.com:dawncc/codex-lan-memory.git
+cd codex-lan-memory
+python -m venv .venv
+```
+
+Activate the environment and install the project:
+
+```bash
+# Linux / macOS
+source .venv/bin/activate
+pip install -e ".[dev]"
+
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+```
+
+Initialize SQLite:
+
+```bash
+# Linux / macOS
+export DATABASE_URL="sqlite:///./demo.db"
+python -c "from memory_server.db import Base,engine; import memory_server.models; Base.metadata.create_all(engine)"
+```
+
+```powershell
+# Windows PowerShell
+$env:DATABASE_URL="sqlite:///./demo.db"
+.\.venv\Scripts\python -c "from memory_server.db import Base,engine; import memory_server.models; Base.metadata.create_all(engine)"
+```
+
+Run these in two terminals with the same `DATABASE_URL`:
+
+```bash
+# Linux / macOS
+codex-memory-server
+codex-memory-worker
+```
+
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\codex-memory-server
+.\.venv\Scripts\codex-memory-worker
+```
+
+Optionally load demonstration data:
+
+```powershell
+.\.venv\Scripts\python scripts\seed_demo.py
+.\.venv\Scripts\python scripts\seed_conversation_demo.py
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+## Deploy with Docker Compose
+
+The Compose deployment starts PostgreSQL/pgvector, the API/UI server, and the Worker.
 
 ```bash
 cp .env.example .env
@@ -10,31 +143,17 @@ cd deploy
 docker compose up --build -d
 ```
 
-Open `http://<server-lan-ip>:8000`. The database is not exposed outside Docker.
+Open `http://<server-lan-ip>:8000`. PostgreSQL is only exposed to the internal Compose network.
 
-### Local SQLite demo without Docker
+## Connect Codex
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\pip install -e ".[dev]"
-$env:DATABASE_URL="sqlite:///./demo.db"
-.\.venv\Scripts\python -c "from memory_server.db import Base,engine; import memory_server.models; Base.metadata.create_all(engine)"
-# Run these in separate terminals with the same DATABASE_URL:
-.\.venv\Scripts\codex-memory-server
-.\.venv\Scripts\codex-memory-worker
-# Optionally seed a demonstration session:
-.\.venv\Scripts\python scripts\seed_demo.py
-```
-
-## Install the MCP client on each Codex machine
-
-Install Python 3.12, then from a checkout of this repository:
+Install the package on every Codex machine:
 
 ```bash
 pipx install .
 ```
 
-Add this to `$CODEX_HOME/config.toml`:
+Add the MCP server to `$CODEX_HOME/config.toml`:
 
 ```toml
 [mcp_servers.codex_memory]
@@ -43,58 +162,107 @@ args = ["--server", "http://192.168.1.100:8000"]
 startup_timeout_sec = 30
 ```
 
-Copy `skill/codex-memory` into `$CODEX_HOME/skills/codex-memory`. Restart Codex and call `memory_health` to verify connectivity.
+Copy `skill/codex-memory` to `$CODEX_HOME/skills/codex-memory`, restart Codex, and call `memory_health`.
 
-When Codex calls `memory_recall`, the response includes both structured matches and a `<chat-memory>` block. The block is immediately visible to Codex as tool context, carries source session information, and explicitly marks recalled content as historical evidence rather than instructions.
+The Skill instructs Codex to:
 
-### Hybrid retrieval
+1. recall relevant project history before substantial work;
+2. save durable decisions, learnings, problems, and solutions;
+3. archive the complete conversation and all available tool results;
+4. include `duration_ms` when exact timing is available;
+5. submit a structured summary before session end or compaction.
 
-Recall combines exact-phrase matching, field-weighted BM25, typo-tolerant fuzzy matching, concept/file metadata, and optional embedding similarity. English/Chinese aliases, Chinese bigrams, and file-path segments improve cross-language and path recall. Weighted reciprocal-rank fusion chooses candidates, calibrated content relevance is shown to users, and MMR removes near-duplicate results. `MEMORY_RECALL_CANDIDATE_LIMIT=0` searches every Memory in the selected project, which is the recommended small-team default. At larger scale, set a bounded candidate pool and move first-stage top-K retrieval to SQLite FTS5 or PostgreSQL GIN/pgvector indexes.
+## MCP tools
 
-`memory_chat_submit` stores the complete chronological transcript separately from derived Memory. Session pages show the full user/assistant/system/tool content first, then observations and summarized memories. Re-sending the same session sequence is idempotent.
+| Tool | Purpose |
+| --- | --- |
+| `memory_submit` | Save a durable observation, decision, learning, problem, solution, or session summary. |
+| `memory_recall` | Return structured matches and a prompt-ready `<chat-memory>` context block. |
+| `memory_session_end` | Submit completed work, decisions, unresolved items, and files. |
+| `memory_chat_submit` | Store the complete chronological user/assistant/system/tool transcript. |
+| `memory_health` | Check the server/database and flush the local pending queue. |
 
-Session pages group messages into user-led turns. Each turn is classified as conversation, code, tool, or error; fenced code is rendered in a dedicated code panel and tool execution is rendered as a terminal-style card with normalized status and scrollable full output. Turn navigation expands collapsed rounds automatically, while all stored text remains HTML-escaped.
+## HTTP surface
 
-### Session execution trace
+The MVP keeps the business API intentionally small:
 
-Open `/traces` to browse every Session by request count, tool count, failures, and active execution time. Each Session trace groups the transcript into user-led request paths and renders the sequence from user request to Codex response and tool calls. Tool nodes are styled by category: test, shell, file, search, browser, network/MCP, database, code, or generic.
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/observations` | Receive durable observations and session summaries. |
+| `POST` | `/api/v1/chat/messages` | Receive complete chat batches and tool metadata. |
+| `POST` | `/api/v1/recall` | Run hybrid Memory retrieval. |
+| `GET` | `/api/v1/health` | Check database health and pending jobs. |
 
-Pass top-level `duration_ms` on any `memory_chat_submit` message when the exact duration is available. Trace displays that value as measured timing. Older messages without timing metadata use the adjacent message timestamp as an explicitly labeled estimate. Active duration excludes idle gaps between separate user requests.
+Main UI routes:
 
-### Tool execution archive and FAQ
+- `/` — overview
+- `/search` — Memory search
+- `/calendar` — daily Memory calendar
+- `/traces` — Session request paths and timing
+- `/tools` — tool execution archive
+- `/faq` — failed-tool FAQ
+- `/sessions/<id>` — complete conversation
 
-Every `tool` message submitted through `memory_chat_submit` is archived with its complete input metadata and raw output. Structured metadata takes precedence when normalizing the status to `success`, `failed`, or `unknown`:
+## Memory lifecycle
 
-- Clear successes create a `learning` observation and enter the Worker/Recall pipeline as `tool_success` historical context.
-- Failures create an evidence-backed `problem` observation and a separate `tool_failure_faq` Memory with an FAQ question, extracted reason, error category, remediation suggestion, and stable failure signature.
-- Consolidation only compares candidates of the same Memory type, so similar success output and failure output can never be merged into one record.
-- Unknown results remain visible in the raw archive but are not promoted to Memory until their outcome is known.
+1. **Capture** — save the raw Observation or complete chat first.
+2. **Compress** — use an optional OpenAI-compatible model, or deterministic rule compression when no LLM is configured.
+3. **Consolidate** — merge only compatible Memory types and keep every source link.
+4. **Retrieve** — combine exact phrase, BM25, fuzzy, metadata, and optional embedding results.
 
-Open `/tools` to filter all executions and `/faq` to browse failed-tool knowledge with links back to the complete source session. Tool-message sequence numbers and archive IDs are idempotent, so retransmitting a chat batch does not duplicate records.
+Successful tools become `tool_success` Memory. Failed tools become separate `tool_failure_faq` Memory so similar success and failure output can never be consolidated together. Unknown outcomes are archived without promotion.
 
-## Daily summaries and calendar
+## Trace timing
 
-The worker refreshes project-by-day summaries every 60 seconds by default. Configure the grouping timezone with `MEMORY_TIMEZONE` and the interval with `MEMORY_DAILY_REFRESH_SECONDS`. Open `/calendar` to browse a month and click a date to view decisions, solutions, unresolved problems, and Memory highlights for that day.
+Pass top-level `duration_ms` on a `memory_chat_submit` message when exact timing is known. Trace renders exact timing in blue. Older messages fall back to the adjacent message timestamp and are explicitly marked as estimates. Active duration excludes idle time between separate user requests.
 
-## Test from a remote Codex host
+## Remote Codex hosts
 
-If the remote host cannot route to the Memory Server LAN address, create an SSH reverse tunnel from the Memory Server machine:
+If a remote host cannot route directly to the LAN server, create a reverse SSH tunnel from the Memory Server machine:
 
 ```bash
 ssh -N -R 18000:127.0.0.1:8000 <remote-host>
 ```
 
-On the remote host, install the wheel into a virtual environment or user target and configure Codex to launch the stdio bridge with `--server http://127.0.0.1:18000`. `scripts/test_remote_codex.sh` performs an end-to-end Codex Agent health, successful/failed tool archive, FAQ, and recall test. A directly routable HTTP/VPN address is preferred for permanent deployment; the reverse tunnel exists only while its SSH process is running.
+Configure the remote MCP bridge with `--server http://127.0.0.1:18000`. The included `scripts/test_remote_codex.sh` validates health, chat submission, successful/failed tool archival, FAQ generation, and recall from a real remote Codex process.
+
+A directly routable LAN, VPN, or private network address is preferred for permanent deployment; the reverse tunnel only exists while its SSH process is running.
+
+## Configuration
+
+| Variable | Default / example | Description |
+| --- | --- | --- |
+| `DATABASE_URL` | `postgresql+psycopg://memory:memory@postgres/memory` | SQLAlchemy database URL; use `sqlite:///./demo.db` locally. |
+| `MEMORY_SERVER_HOST` | `0.0.0.0` | API bind address. |
+| `MEMORY_SERVER_PORT` | `8000` | API/UI port. |
+| `MEMORY_LLM_ENABLED` | `false` | Enable OpenAI-compatible compression. |
+| `MEMORY_LLM_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible endpoint. |
+| `MEMORY_LLM_MODEL` | `qwen3` | Compression model name. |
+| `MEMORY_EMBEDDING_ENABLED` | `false` | Enable local embeddings. |
+| `MEMORY_EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | Sentence-transformers model. |
+| `MEMORY_RECALL_CANDIDATE_LIMIT` | `0` | `0` searches every Memory; use a limit for larger datasets. |
+| `MEMORY_DAILY_REFRESH_SECONDS` | `60` | Daily-summary refresh interval. |
+| `MEMORY_TIMEZONE` | `Asia/Shanghai` | Daily-summary grouping timezone. |
 
 ## Optional session-end hook
 
-Set `MEMORY_SERVER_URL`, ensure `httpx` is available to the hook Python, then register `hooks/session-end.py` for Codex `Stop` and `PreCompact`. It accepts hook JSON on stdin. If the server is unavailable, it appends the summary to `$CODEX_HOME/codex-memory/pending.jsonl`; the MCP client flushes that file on its next call.
+Set `MEMORY_SERVER_URL`, ensure `httpx` is available to the hook Python, and register `hooks/session-end.py` for Codex `Stop` and `PreCompact`. If the server is unavailable, the hook writes to `$CODEX_HOME/codex-memory/pending.jsonl`; the MCP bridge retries the queue later.
 
-## Optional local models
+## Project layout
 
-- Set `MEMORY_EMBEDDING_ENABLED=true` and install `.[embedding]` in the worker image to create local embeddings.
-- Set `MEMORY_LLM_ENABLED=true` and configure an OpenAI-compatible `/v1/chat/completions` endpoint for structured compression.
-- Both are optional. The default worker uses deterministic rule compression and search falls back to PostgreSQL text matching.
+```text
+packages/memory-common/   Shared schemas, settings, pending queue
+packages/memory-server/   FastAPI, SQLAlchemy, recall, Trace, Jinja2 UI
+packages/memory-worker/   compression, consolidation, embeddings, daily summaries
+packages/memory-mcp/      local stdio MCP-to-HTTP bridge
+skill/codex-memory/       Codex workflow Skill
+hooks/                    Stop / PreCompact fallback hook
+migrations/               Alembic migrations
+deploy/                   Docker Compose deployment
+scripts/                  seed and remote validation scripts
+tests/                    unit and integration tests
+docs/images/              README screenshots
+```
 
 ## Development
 
@@ -102,3 +270,15 @@ Set `MEMORY_SERVER_URL`, ensure `httpx` is available to the hook Python, then re
 pip install -e ".[dev]"
 pytest
 ```
+
+Current test coverage includes chat preservation, Chinese/English retrieval, recall isolation, pending retries, tool outcome classification, FAQ construction, Worker consolidation boundaries, Trace timing, and HTML escaping.
+
+## Security scope
+
+This MVP assumes a trusted private network. It does **not** implement TLS, authentication, device tokens, tenant isolation, or automatic redaction. Add those controls before exposing the service beyond a trusted LAN or VPN.
+
+## License
+
+Copyright (c) 2026 dawncc.
+
+This project is open-source software licensed under the [MIT License](LICENSE). You may use, copy, modify, merge, publish, distribute, sublicense, and sell copies subject to the license terms.
