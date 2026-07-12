@@ -55,6 +55,12 @@ Recall combines exact-phrase matching, field-weighted BM25, typo-tolerant fuzzy 
 
 Session pages group messages into user-led turns. Each turn is classified as conversation, code, tool, or error; fenced code is rendered in a dedicated code panel and tool execution is rendered as a terminal-style card with normalized status and scrollable full output. Turn navigation expands collapsed rounds automatically, while all stored text remains HTML-escaped.
 
+### Session execution trace
+
+Open `/traces` to browse every Session by request count, tool count, failures, and active execution time. Each Session trace groups the transcript into user-led request paths and renders the sequence from user request to Codex response and tool calls. Tool nodes are styled by category: test, shell, file, search, browser, network/MCP, database, code, or generic.
+
+Pass top-level `duration_ms` on any `memory_chat_submit` message when the exact duration is available. Trace displays that value as measured timing. Older messages without timing metadata use the adjacent message timestamp as an explicitly labeled estimate. Active duration excludes idle gaps between separate user requests.
+
 ### Tool execution archive and FAQ
 
 Every `tool` message submitted through `memory_chat_submit` is archived with its complete input metadata and raw output. Structured metadata takes precedence when normalizing the status to `success`, `failed`, or `unknown`:

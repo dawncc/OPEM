@@ -18,6 +18,7 @@ from .db import Base, SessionLocal, engine, get_db
 from .conversation import build_chat_turns
 from .models import DailySummary, Memory, MemorySource, Observation, ProcessingJob, Project, Session, ToolExecution
 from .services import create_chat_batch, create_observation, format_recall_context, recall
+from .tracing import build_session_trace, format_duration
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ def pretty_datetime(value: datetime | None) -> str:
 
 
 templates.env.filters["pretty_datetime"] = pretty_datetime
+templates.env.filters["duration"] = format_duration
 
 
 @app.get("/api/v1/health", response_model=HealthResponse)
@@ -92,6 +94,40 @@ def project_page(request: Request, project_id: UUID, db: DbSession = Depends(get
     observations = db.scalars(select(Observation).where(Observation.project_id == project_id).order_by(Observation.created_at.desc()).limit(50)).all()
     memories = db.scalars(select(Memory).where(Memory.project_id == project_id).order_by(Memory.updated_at.desc()).limit(50)).all()
     return templates.TemplateResponse(request, "project.html", {"project": project, "sessions": sessions, "observations": observations, "memories": memories})
+
+
+@app.get("/traces", response_class=HTMLResponse)
+def traces_page(request: Request, project: str | None = None, db: DbSession = Depends(get_db)):
+    stmt = (
+        select(Session)
+        .options(selectinload(Session.project), selectinload(Session.chat_messages))
+        .order_by(Session.started_at.desc())
+    )
+    if project:
+        stmt = stmt.join(Project).where(Project.name == project)
+    sessions = db.scalars(stmt.limit(100)).all()
+    traces = [build_session_trace(session) for session in sessions]
+    projects = db.scalars(select(Project).order_by(Project.name)).all()
+    summary = {
+        "sessions": len(traces),
+        "requests": sum(trace["request_count"] for trace in traces),
+        "tools": sum(trace["tool_count"] for trace in traces),
+        "failed": sum(trace["failed_count"] for trace in traces),
+        "duration_ms": sum(trace["active_duration_ms"] or 0 for trace in traces),
+    }
+    return templates.TemplateResponse(request, "traces.html", {"traces": traces, "projects": projects, "selected_project": project, "summary": summary})
+
+
+@app.get("/traces/{session_id}", response_class=HTMLResponse)
+def trace_page(request: Request, session_id: UUID, db: DbSession = Depends(get_db)):
+    session = db.scalar(
+        select(Session)
+        .where(Session.id == session_id)
+        .options(selectinload(Session.project), selectinload(Session.chat_messages))
+    )
+    if not session:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "trace.html", {"trace": build_session_trace(session)})
 
 
 @app.get("/sessions/{session_id}", response_class=HTMLResponse)

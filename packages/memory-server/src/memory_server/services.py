@@ -89,9 +89,12 @@ def create_chat_batch(db: DbSession, payload: ChatBatchCreate) -> tuple[Session,
         if message.sequence in existing_sequences:
             duplicates += 1
             continue
+        metadata = dict(message.metadata)
+        if message.duration_ms is not None:
+            metadata["duration_ms"] = message.duration_ms
         chat_message = ChatMessage(
             session_id=session.id, role=message.role, content=message.content,
-            sequence=message.sequence, metadata_=message.metadata,
+            sequence=message.sequence, metadata_=metadata,
             created_at=message.created_at or datetime.now(timezone.utc),
         )
         db.add(chat_message)

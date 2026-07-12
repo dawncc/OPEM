@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from memory_common.schemas import ChatBatchCreate, ObservationCreate, ObservationKind, RecallRequest
+from memory_common.schemas import ChatBatchCreate, ChatMessageCreate, ObservationCreate, ObservationKind, RecallRequest
 import memory_worker.main as worker_module
 from memory_worker.main import build_daily_content, memory_type_for, rule_compress, similarity
 from datetime import date
@@ -16,6 +16,7 @@ from memory_server.db import Base
 from memory_server.main import templates
 from memory_server.models import Memory, Observation, ProcessingJob, ToolExecution
 from memory_server.tool_archive import error_category, extract_failure_reason, failure_signature
+from memory_server.tracing import build_session_trace, classify_tool_kind, explicit_duration_ms, format_duration
 from memory_common.pending import append_pending, drain_pending, pending_path
 from memory_common.schemas import RecallItem
 from memory_server.services import bm25_scores, create_chat_batch, format_recall_context, reciprocal_rank_fusion, tokenize
@@ -108,6 +109,13 @@ def test_chat_batch_preserves_roles_and_full_content():
     assert "第二行" in batch.messages[1].content
 
 
+def test_chat_message_duration_is_validated():
+    message = ChatMessageCreate(role="tool", content="ok", sequence=0, duration_ms=245.5)
+    assert message.duration_ms == 245.5
+    with pytest.raises(ValidationError):
+        ChatMessageCreate(role="tool", content="bad", sequence=0, duration_ms=-1)
+
+
 def test_tokenize_supports_chinese_bigrams_and_english_terms():
     tokens = tokenize("SQLite 本机部署方案")
     assert "sqlite" in tokens
@@ -193,7 +201,7 @@ def test_chat_tools_are_archived_and_only_known_outcomes_create_memories():
     LocalSession = sessionmaker(engine, expire_on_commit=False)
     with LocalSession() as db:
         payload = ChatBatchCreate(project="archive-demo", session_id="tools-1", messages=[
-            {"role": "tool", "content": "3 passed in 0.42s", "sequence": 0, "metadata": {"tool_name": "pytest", "status": "completed", "command": "pytest -q"}},
+            {"role": "tool", "content": "3 passed in 0.42s", "sequence": 0, "duration_ms": 420, "metadata": {"tool_name": "pytest", "status": "completed", "command": "pytest -q"}},
             {"role": "tool", "content": "FAILED test_api.py\nAssertionError: expected 2", "sequence": 1, "metadata": {"tool_name": "pytest", "exit_code": 1, "command": "pytest tests/test_api.py"}},
             {"role": "tool", "content": "Process started and is still streaming", "sequence": 2, "metadata": {"tool_name": "shell"}},
         ])
@@ -203,6 +211,7 @@ def test_chat_tools_are_archived_and_only_known_outcomes_create_memories():
         archives = {item.status: item for item in db.scalars(select(ToolExecution)).all()}
         assert set(archives) == {"success", "failed", "unknown"}
         assert archives["success"].output_text == "3 passed in 0.42s"
+        assert archives["success"].metadata_["duration_ms"] == 420
         assert archives["success"].observation.kind == "learning"
         assert "tool-success" in archives["success"].observation.concepts
         assert archives["failed"].observation.kind == "problem"
@@ -253,6 +262,34 @@ def test_worker_keeps_similar_tool_success_and_failure_memories_separate(monkeyp
         failure = next(memory for memory in memories if memory.memory_type == "tool_failure_faq")
         assert "tool-success" in success.concepts and "FAQ" not in success.concepts
         assert "FAQ" in failure.concepts and "tool-success" not in failure.concepts
+
+
+def test_session_trace_groups_requests_and_styles_tool_types():
+    base = datetime(2026, 7, 12, 8, 0, tzinfo=timezone.utc)
+    messages = [
+        SimpleNamespace(id=uuid4(), sequence=0, role="user", content="运行测试并调用接口", metadata_={}, created_at=base),
+        SimpleNamespace(id=uuid4(), sequence=1, role="assistant", content="开始执行", metadata_={}, created_at=base.replace(microsecond=400_000)),
+        SimpleNamespace(id=uuid4(), sequence=2, role="tool", content="4 passed", metadata_={"tool_name": "pytest", "status": "completed", "duration_ms": 240, "command": "pytest -q"}, created_at=base.replace(microsecond=400_000)),
+        SimpleNamespace(id=uuid4(), sequence=3, role="tool", content="Connection failed: refused", metadata_={"tool_name": "shell", "status": "failed", "duration_ms": 300, "command": "curl http://service"}, created_at=base.replace(microsecond=400_000)),
+    ]
+    session = SimpleNamespace(chat_messages=messages)
+    trace = build_session_trace(session)
+    assert trace["request_count"] == 1
+    assert trace["tool_count"] == 2
+    assert trace["failed_count"] == 1
+    assert trace["active_duration_ms"] == 540
+    assert [event["tool_kind"] for event in trace["paths"][0]["events"] if event["role"] == "tool"] == ["test", "network"]
+    assert trace["paths"][0]["events"][1]["duration_accuracy"] == "estimated"
+    assert trace["paths"][0]["events"][2]["duration_accuracy"] == "exact"
+
+
+def test_trace_duration_parsing_and_tool_classification():
+    assert explicit_duration_ms({"elapsed_seconds": 1.25}) == 1250
+    assert explicit_duration_ms({"started_at": "2026-07-12T10:00:00+00:00", "ended_at": "2026-07-12T10:00:02+00:00"}) == 2000
+    assert format_duration(240) == "240 ms"
+    assert format_duration(1250) == "1.25 s"
+    assert classify_tool_kind({"command": "apply_patch change.diff"}, "shell") == "file"
+    assert classify_tool_kind({"command": "rg TODO packages"}, "shell") == "search"
 
 
 def test_session_template_escapes_chat_html():

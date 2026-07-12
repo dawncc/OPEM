@@ -1,4 +1,4 @@
 interface:
   display_name: "Codex Memory"
   short_description: "Recall memory and archive Codex tool outcomes"
-  default_prompt: "Recall relevant project memory, preserve the complete chat, and archive successful and failed tool outcomes with source context."
+  default_prompt: "Recall relevant project memory, preserve the complete chat with timing metadata, and archive successful and failed tool outcomes with source context."

@@ -97,6 +97,7 @@ def memory_chat_submit(project: str, session_id: str, messages: list[dict], sour
             "content": str(message.get("content", "")),
             "sequence": int(message.get("sequence", index)),
             "created_at": message.get("created_at"),
+            "duration_ms": message.get("duration_ms"),
             "metadata": message.get("metadata", {}),
         })
     payload = {"project": project, "session_id": session_id, "source_host": source_host or socket.gethostname(), "messages": normalized}

@@ -40,6 +40,7 @@ class ChatMessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=500_000)
     sequence: int = Field(ge=0)
     created_at: datetime | None = None
+    duration_ms: float | None = Field(default=None, ge=0, le=86_400_000)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
