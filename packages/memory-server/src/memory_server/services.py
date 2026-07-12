@@ -3,6 +3,7 @@ import re
 import threading
 import unicodedata
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
@@ -15,6 +16,18 @@ from .models import ChatMessage, Memory, MemoryFeedback, MemorySource, Observati
 
 _embedding_model = None
 _chat_ingest_lock = threading.RLock()
+
+
+@dataclass(frozen=True)
+class RecallPolicy:
+    """Low-risk ranking knobs that can be replayed before shadow deployment."""
+
+    fusion_weight: float = 0.65
+    confidence_weight: float = 0.10
+    diversity_penalty: float = 0.18
+
+
+DEFAULT_RECALL_POLICY = RecallPolicy()
 
 
 def feedback_confidence(counts: dict[str, int]) -> float:
@@ -296,7 +309,13 @@ def reciprocal_rank_fusion(scores_by_algorithm: dict[str, list[float]], weights:
     return [score / normalizer for score in fused], matched
 
 
-def recall(db: DbSession, query: str, project: str | None, limit: int) -> list[RecallItem]:
+def recall(
+    db: DbSession,
+    query: str,
+    project: str | None,
+    limit: int,
+    policy: RecallPolicy = DEFAULT_RECALL_POLICY,
+) -> list[RecallItem]:
     from memory_common.config import get_settings
     settings = get_settings()
     original_query_tokens = tokenize(query)
@@ -366,13 +385,16 @@ def recall(db: DbSession, query: str, project: str | None, limit: int) -> list[R
             0.28 * exact[index] + 0.28 * bm25[index] + 0.14 * fuzzy[index]
             + 0.14 * metadata[index] + 0.22 * vectors[index]
         )
-        score = (
-            0.75 * content_relevance + 0.08 * coverage + 0.04 * (memory.importance / 5)
-            + 0.10 * memory.confidence + 0.03 * freshness
+        non_confidence_score = (
+            0.75 * content_relevance + 0.08 * coverage
+            + 0.04 * (memory.importance / 5) + 0.03 * freshness
         )
+        confidence_weight = max(0.0, policy.confidence_weight)
+        score = (non_confidence_score + confidence_weight * memory.confidence) / (0.90 + confidence_weight)
         if score < 0.12:
             continue
-        ranking_score = 0.65 * fused[index] + 0.35 * score
+        fusion_weight = min(1.0, max(0.0, policy.fusion_weight))
+        ranking_score = fusion_weight * fused[index] + (1 - fusion_weight) * score
         details = {name: round(values[index], 4) for name, values in algorithm_scores.items() if values[index] > 0}
         details.update({"查询覆盖": round(coverage, 4), "重要度": round(memory.importance / 5, 4), "新鲜度": round(freshness, 4)})
         sessions = sorted({source.observation.session.external_session_id for source in memory.sources if source.observation.session})
@@ -397,7 +419,7 @@ def recall(db: DbSession, query: str, project: str | None, limit: int) -> list[R
         best_similarity = 0.0
         for position, (_, ranking_score, item_tokens) in enumerate(pool):
             similarity = max((len(item_tokens & prior) / max(len(item_tokens | prior), 1) for prior in selected_tokens), default=0.0)
-            adjusted = ranking_score - 0.18 * similarity
+            adjusted = ranking_score - max(0.0, policy.diversity_penalty) * similarity
             if adjusted > best_adjusted:
                 best_position, best_adjusted, best_similarity = position, adjusted, similarity
         item, _, item_tokens = pool.pop(best_position)
@@ -407,7 +429,7 @@ def recall(db: DbSession, query: str, project: str | None, limit: int) -> list[R
             item.score_details["多样性惩罚"] = round(best_similarity * 0.18, 4)
         selected.append(item)
         selected_tokens.append(item_tokens)
-    return sorted(selected, key=lambda result: result.score, reverse=True)
+    return selected
 
 
 def format_recall_context(query: str, items: list[RecallItem]) -> str:
