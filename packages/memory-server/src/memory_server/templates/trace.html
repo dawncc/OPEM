@@ -8,13 +8,14 @@
   <div class="trace-stat"><span>工具调用</span><strong>{{ trace.tool_count }}</strong></div>
   <div class="trace-stat"><span>失败调用</span><strong>{{ trace.failed_count }}</strong></div>
   <div class="trace-stat"><span>活跃耗时</span><strong>{{ trace.active_duration_ms|duration }}</strong></div>
+  <div class="trace-stat"><span>预估成本</span><strong>{{ trace.estimated_cost_label }}</strong></div>
 </section>
-<p class="timing-note">蓝色耗时为提交端提供的精确值；橙色耗时为相邻消息时间差估算。活跃耗时不把两个独立请求之间的空闲时间算入执行时间。{% if trace.wall_span_ms is not none %} 会话自然跨度：{{ trace.wall_span_ms|duration }}。{% endif %}</p>
+<p class="timing-note">成本按标准 API 文本价格估算：优先使用采集到的 usage；缺失时根据路径文本近似 token，并默认按 GPT-5.4 计价，不代表最终账单。工具专项费用、订阅额度和地区加价暂未计入。{% if trace.wall_span_ms is not none %} 会话自然跨度：{{ trace.wall_span_ms|duration }}。{% endif %}</p>
 
 {% if trace.paths|length > 1 %}<nav class="path-nav" aria-label="请求路径导航">{% for path in trace.paths %}<a class="turn-chip" href="#{{ path.anchor }}">{% if path.is_context %}上下文{% else %}请求 {{ path.number }}{% endif %}</a>{% endfor %}</nav>{% endif %}
 
 {% for path in trace.paths %}<section class="path-card" id="{{ path.anchor }}">
-  <header class="path-head"><div><p class="path-kicker">{% if path.is_context %}Session Context{% else %}Request {{ path.number }}{% endif %}</p><h2 class="path-title">{{ path.title }}</h2></div><div class="path-summary"><span class="trace-metric">{{ path.event_count }} 节点</span><span class="trace-metric">{{ path.tool_count }} 工具</span>{% if path.failed_count %}<span class="trace-metric failed">{{ path.failed_count }} 失败</span>{% endif %}<span class="trace-metric">{{ path.duration_ms|duration }}</span></div></header>
+  <header class="path-head"><div><p class="path-kicker">{% if path.is_context %}Session Context{% else %}Request {{ path.number }}{% endif %}</p><h2 class="path-title">{{ path.title }}</h2></div><div class="path-summary"><span class="trace-metric">{{ path.event_count }} 节点</span><span class="trace-metric">{{ path.tool_count }} 工具</span>{% if path.failed_count %}<span class="trace-metric failed">{{ path.failed_count }} 失败</span>{% endif %}<span class="trace-metric">{{ path.duration_ms|duration }}</span>{% if path.cost %}<span class="trace-metric cost" title="{{ path.cost.model }} · 输入 {{ path.cost.input_tokens }} tokens{% if path.cost.cached_input_tokens %}（缓存 {{ path.cost.cached_input_tokens }}）{% endif %} · 输出 {{ path.cost.output_tokens }} tokens · {% if path.cost.accuracy == 'usage' %}基于 usage{% else %}文本估算{% endif %}">≈ {{ path.cost.cost_label }}</span>{% endif %}</div></header>
   <div class="path-strip" aria-label="路径摘要">{% for event in path.events %}{% if not loop.first %}<span class="path-arrow">→</span>{% endif %}<span class="path-step {% if event.role == 'tool' %}tool{% endif %}">{{ event.label }}</span>{% endfor %}</div>
   <div class="trace-timeline">{% for event in path.events %}<article class="trace-event role-{{ event.role }} {% if event.tool_kind %}kind-{{ event.tool_kind }}{% endif %} {% if event.tool_status %}status-{{ event.tool_status }}{% endif %}">
     <span class="event-marker">{% if event.role == 'user' %}U{% elif event.role == 'assistant' %}AI{% elif event.role == 'system' %}S{% else %}{{ event.tool_symbol }}{% endif %}</span>

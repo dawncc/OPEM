@@ -11,12 +11,13 @@
   <div class="trace-stat"><span>工具调用</span><strong>{{ summary.tools }}</strong></div>
   <div class="trace-stat"><span>失败调用</span><strong>{{ summary.failed }}</strong></div>
   <div class="trace-stat"><span>活跃耗时</span><strong>{{ summary.duration_ms|duration }}</strong></div>
+  <div class="trace-stat"><span>预估成本</span><strong>{{ summary.cost_usd|usd }}</strong></div>
 </section>
 
 <section class="section"><div class="section-header"><h2 class="section-title">最近 Session</h2><span class="section-note">最多 100 个</span></div><div class="trace-list">
 {% for trace in traces %}<a class="trace-session-card" href="/traces/{{ trace.session.id }}">
   <div><h3 class="trace-session-title">{{ trace.session.external_session_id }}</h3><div class="trace-session-meta"><span>{{ trace.session.project.name }}</span><span>·</span><span>{{ trace.session.source_host or '未知来源' }}</span><span>·</span><time>{{ trace.session.started_at|pretty_datetime }}</time></div></div>
-  <div class="trace-inline-metrics"><span class="trace-metric">{{ trace.request_count }} 请求</span><span class="trace-metric">{{ trace.tool_count }} 工具</span>{% if trace.failed_count %}<span class="trace-metric failed">{{ trace.failed_count }} 失败</span>{% endif %}<span class="trace-metric">{{ trace.active_duration_ms|duration }}</span></div><span class="chevron">›</span>
+  <div class="trace-inline-metrics"><span class="trace-metric">{{ trace.request_count }} 请求</span><span class="trace-metric">{{ trace.tool_count }} 工具</span>{% if trace.failed_count %}<span class="trace-metric failed">{{ trace.failed_count }} 失败</span>{% endif %}<span class="trace-metric">{{ trace.active_duration_ms|duration }}</span><span class="trace-metric cost">≈ {{ trace.estimated_cost_label }}</span></div><span class="chevron">›</span>
 </a>{% else %}<div class="empty-state"><div class="empty-icon">↝</div><p>尚无可展示的 Session Trace。</p></div>{% endfor %}
 </div></section>
 {% endblock %}

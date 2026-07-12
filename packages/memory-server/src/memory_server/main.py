@@ -20,6 +20,7 @@ from .daily_archive import render_daily_markdown
 from .models import ChatMessage, DailySummary, Memory, MemorySource, Observation, ProcessingJob, Project, Session, ToolExecution
 from .services import create_chat_batch, create_memory_feedback, create_observation, format_recall_context, recall
 from .tracing import build_session_trace, format_duration
+from .costing import format_usd
 
 
 @asynccontextmanager
@@ -46,6 +47,7 @@ def pretty_datetime(value: datetime | None) -> str:
 
 templates.env.filters["pretty_datetime"] = pretty_datetime
 templates.env.filters["duration"] = format_duration
+templates.env.filters["usd"] = format_usd
 
 
 @app.get("/api/v1/health", response_model=HealthResponse)
@@ -147,6 +149,7 @@ def traces_page(request: Request, project: str | None = None, db: DbSession = De
         "tools": sum(trace["tool_count"] for trace in traces),
         "failed": sum(trace["failed_count"] for trace in traces),
         "duration_ms": sum(trace["active_duration_ms"] or 0 for trace in traces),
+        "cost_usd": sum(trace["estimated_cost_usd"] for trace in traces),
     }
     return templates.TemplateResponse(request, "traces.html", {"traces": traces, "projects": projects, "selected_project": project, "summary": summary})
 

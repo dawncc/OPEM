@@ -18,6 +18,7 @@ from memory_server.main import templates
 from memory_server.models import Memory, Observation, ProcessingJob, ToolExecution
 from memory_server.tool_archive import error_category, extract_failure_reason, failure_signature
 from memory_server.tracing import build_session_trace, classify_tool_kind, explicit_duration_ms, format_duration
+from memory_server.costing import estimate_request_cost, format_usd
 from memory_common.pending import append_pending, drain_pending, pending_path
 from memory_common.schemas import RecallItem
 from memory_server.services import bm25_scores, create_chat_batch, format_recall_context, reciprocal_rank_fusion, tokenize
@@ -321,6 +322,39 @@ def test_trace_duration_parsing_and_tool_classification():
     assert format_duration(1250) == "1.25 s"
     assert classify_tool_kind({"command": "apply_patch change.diff"}, "shell") == "file"
     assert classify_tool_kind({"command": "rg TODO packages"}, "shell") == "search"
+
+
+def test_request_cost_prefers_usage_and_prices_cached_tokens():
+    messages = [SimpleNamespace(role="assistant", content="done", metadata_={
+        "model": "gpt-5.4", "usage": {"input_tokens": 1000, "cached_input_tokens": 800, "output_tokens": 100}
+    })]
+    cost = estimate_request_cost(messages)
+    assert cost["accuracy"] == "usage"
+    assert cost["input_tokens"] == 1000
+    assert cost["cost_usd"] == pytest.approx(0.0022)
+    assert format_usd(cost["cost_usd"]) == "$0.0022"
+
+
+def test_request_cost_estimates_each_assistant_tool_round_trip():
+    messages = [
+        SimpleNamespace(role="user", content="hello", metadata_={}),
+        SimpleNamespace(role="assistant", content="checking", metadata_={}),
+        SimpleNamespace(role="tool", content="result " * 100, metadata_={}),
+        SimpleNamespace(role="assistant", content="finished", metadata_={}),
+    ]
+    cost = estimate_request_cost(messages)
+    assert cost["accuracy"] == "estimated"
+    assert cost["input_tokens"] > cost["output_tokens"]
+    assert cost["model_assumed"] is True
+
+
+def test_request_cost_matches_variant_snapshot_before_base_model():
+    messages = [SimpleNamespace(role="assistant", content="done", metadata_={
+        "model": "gpt-5.4-mini-2026-03-17", "usage": {"input_tokens": 1_000_000, "output_tokens": 0}
+    })]
+    cost = estimate_request_cost(messages)
+    assert cost["price_model"] == "gpt-5.4-mini"
+    assert cost["cost_usd"] == pytest.approx(0.75)
 
 
 def test_trace_template_escapes_request_content():

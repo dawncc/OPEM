@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Iterable
 
 from .conversation import classify_tool_status
+from .costing import estimate_request_cost, format_usd
 from .models import ChatMessage, Session
 
 
@@ -167,6 +168,7 @@ def build_session_trace(session: Session, messages: Iterable[ChatMessage] | None
         exact_total = sum(event["duration_ms"] or 0 for event in events if event["duration_accuracy"] == "exact")
         total_duration = max(observed_span, exact_total) if observed_span or exact_total else None
         tool_events = [event for event in events if event["role"] == "tool"]
+        cost = estimate_request_cost(group) if has_user else None
         paths.append({
             "number": request_number if has_user else None,
             "anchor": f"request-{request_number}" if has_user else f"context-{group_index}",
@@ -180,12 +182,14 @@ def build_session_trace(session: Session, messages: Iterable[ChatMessage] | None
             "duration_accuracy": "mixed" if exact_total else ("estimated" if observed_span else "none"),
             "started_at": group[0].created_at,
             "ended_at": group[-1].created_at,
+            "cost": cost,
         })
 
     request_paths = [path for path in paths if not path["is_context"]]
     tool_events = [event for path in paths for event in path["events"] if event["role"] == "tool"]
     wall_span = _delta_ms(ordered[-1].created_at, ordered[0].created_at) if ordered else None
     active_durations = [path["duration_ms"] for path in request_paths if path["duration_ms"] is not None]
+    estimated_cost = sum(path["cost"]["cost_usd"] for path in request_paths)
     return {
         "session": session,
         "paths": paths,
@@ -196,4 +200,6 @@ def build_session_trace(session: Session, messages: Iterable[ChatMessage] | None
         "active_duration_ms": sum(active_durations) if active_durations else None,
         "wall_span_ms": wall_span,
         "has_exact_timing": any(event["duration_accuracy"] == "exact" for path in paths for event in path["events"]),
+        "estimated_cost_usd": estimated_cost,
+        "estimated_cost_label": format_usd(estimated_cost),
     }
