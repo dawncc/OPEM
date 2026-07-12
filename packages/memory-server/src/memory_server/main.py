@@ -16,7 +16,7 @@ from memory_common.schemas import ChatBatchCreate, ChatBatchResponse, HealthResp
 
 from .db import Base, SessionLocal, engine, get_db
 from .conversation import build_chat_turns
-from .models import DailySummary, Memory, MemorySource, Observation, ProcessingJob, Project, Session, ToolExecution
+from .models import ChatMessage, DailySummary, Memory, MemorySource, Observation, ProcessingJob, Project, Session, ToolExecution
 from .services import create_chat_batch, create_observation, format_recall_context, recall
 from .tracing import build_session_trace, format_duration
 
@@ -30,7 +30,12 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Codex LAN Memory", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="Onevom",
+    description="One Personal Evolving Memory System",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
@@ -75,6 +80,7 @@ def home(request: Request, db: DbSession = Depends(get_db)):
     counts = {
         "projects": db.scalar(select(func.count()).select_from(Project)) or 0,
         "sessions": db.scalar(select(func.count()).select_from(Session)) or 0,
+        "messages": db.scalar(select(func.count()).select_from(ChatMessage)) or 0,
         "observations": db.scalar(select(func.count()).select_from(Observation)) or 0,
         "memories": db.scalar(select(func.count()).select_from(Memory)) or 0,
         "pending": db.scalar(select(func.count()).select_from(ProcessingJob).where(ProcessingJob.status == "pending")) or 0,
@@ -82,7 +88,18 @@ def home(request: Request, db: DbSession = Depends(get_db)):
     projects = db.scalars(select(Project).order_by(Project.created_at.desc()).limit(20)).all()
     observations = db.execute(select(Observation, Project).join(Project).order_by(Observation.created_at.desc()).limit(15)).all()
     memories = db.execute(select(Memory, Project).join(Project).order_by(Memory.updated_at.desc()).limit(15)).all()
-    return templates.TemplateResponse(request, "index.html", {"counts": counts, "projects": projects, "observations": observations, "memories": memories})
+    recent_sessions = db.execute(
+        select(Session, Project, func.max(ChatMessage.created_at), func.count(ChatMessage.id))
+        .join(Project, Session.project_id == Project.id)
+        .outerjoin(ChatMessage, ChatMessage.session_id == Session.id)
+        .group_by(Session.id, Project.id)
+        .order_by(func.coalesce(func.max(ChatMessage.created_at), Session.started_at).desc())
+        .limit(12)
+    ).all()
+    return templates.TemplateResponse(request, "index.html", {
+        "counts": counts, "projects": projects, "observations": observations,
+        "memories": memories, "recent_sessions": recent_sessions,
+    })
 
 
 @app.get("/projects/{project_id}", response_class=HTMLResponse)

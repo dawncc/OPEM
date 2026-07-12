@@ -1,14 +1,16 @@
-# Codex LAN Memory
+# Onevom
+
+**One Personal Evolving Memory System**
 
 **English** | [简体中文](README.zh-CN.md)
 
 [Live Sites showcase](https://codex-lan-memory.dawn-cc022.chatgpt.site) · Owner-only deployment
 
-A lightweight, self-hosted memory and trace system for Codex. Codex instances on different machines submit complete conversations, durable observations, and tool outcomes through a local MCP bridge. A shared Python server stores the raw history, consolidates long-term Memory, supports hybrid recall, and exposes a compact web UI.
+Onevom, short for **One Personal Evolving Memory System**, aggregates conversations, durable observations, and tool outcomes from Codex instances across multiple machines, consolidates them into long-term knowledge, supports contextual recall, and evolves as its owner continues to use it.
 
 > MVP scope: trusted LAN HTTP, one shared server, SQLite or PostgreSQL, no authentication or TLS.
 
-![Codex LAN Memory overview](docs/images/overview.png)
+![Onevom overview](docs/images/overview.png)
 
 ## Highlights
 
@@ -244,9 +246,17 @@ A directly routable LAN, VPN, or private network address is preferred for perman
 | `MEMORY_DAILY_REFRESH_SECONDS` | `60` | Daily-summary refresh interval. |
 | `MEMORY_TIMEZONE` | `Asia/Shanghai` | Daily-summary grouping timezone. |
 
-## Optional session-end hook
+## Real-time Codex hooks (recommended)
 
-Set `MEMORY_SERVER_URL`, ensure `httpx` is available to the hook Python, and register `hooks/session-end.py` for Codex `Stop` and `PreCompact`. If the server is unavailable, the hook writes to `$CODEX_HOME/codex-memory/pending.jsonl`; the MCP bridge retries the queue later.
+MCP/Skill-only capture depends on Codex choosing to call a tool and can miss ordinary requests. Install deterministic lifecycle hooks on every Codex host:
+
+```bash
+python scripts/install_codex_hooks.py --server http://192.168.1.100:8000
+```
+
+The installer preserves existing hooks and adds `UserPromptSubmit`, `PostToolUse`, `Stop`, and `PreCompact` capture. User prompts, tool results, and final assistant messages become visible immediately; `Stop` also creates an Observation for asynchronous Memory consolidation. The standard-library-only client queues failed deliveries under `$CODEX_HOME/codex-memory/pending.jsonl` and retries them on the next lifecycle event.
+
+After installation, open `/hooks` in Codex, review and trust the new definitions, then start a new task. The home page refreshes its live-session list every five seconds. `hooks/session-end.py` remains only as a legacy compatibility entry point.
 
 ## Project layout
 

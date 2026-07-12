@@ -1,13 +1,31 @@
 {% extends "base.html" %}
 {% block content %}
-{% set labels = {'projects':'项目','sessions':'会话','observations':'观察','memories':'记忆','pending':'待处理'} %}
+{% set labels = {'projects':'项目','sessions':'会话','messages':'聊天消息','observations':'观察','memories':'记忆','pending':'待处理'} %}
 <section class="hero">
   <div class="hero-copy">
     <p class="eyebrow">Personal Intelligence</p>
-    <h1 class="page-title">你的 Codex 记忆</h1>
+    <h1 class="page-title">你的个人演进记忆</h1>
     <p class="subtitle">集中查看跨设备的对话、决策与长期知识，让每一次工作都能被重新找到。</p>
   </div>
   <div class="actions"><a class="button" href="/calendar">查看日历</a><a class="button primary" href="/search">搜索记忆</a></div>
+</section>
+
+<section class="section flush" id="live-activity">
+  <div class="section-header">
+    <h2 class="section-title">实时会话</h2>
+    <span class="section-note"><span style="color:var(--green)">●</span> 每 5 秒自动更新</span>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>项目</th><th>Session</th><th>状态</th><th>消息</th><th>最后活动</th></tr></thead><tbody>
+    {% for s,p,last_activity,message_count in recent_sessions %}
+    <tr>
+      <td class="muted">{{ p.name }}</td>
+      <td><a class="table-title" href="/sessions/{{ s.id }}">{{ s.external_session_id }}</a></td>
+      <td><span class="badge" data-type="{{ s.status }}">{{ '记录中' if s.status == 'active' else '已完成' }}</span></td>
+      <td class="muted">{{ message_count }}</td>
+      <td class="muted nowrap">{{ (last_activity or s.started_at)|pretty_datetime }}</td>
+    </tr>
+    {% else %}<tr><td colspan="5"><div class="empty-state">等待 Codex 客户端提交第一条请求</div></td></tr>{% endfor %}
+  </tbody></table></div>
 </section>
 
 <section class="stats-grid" aria-label="数据概览">
@@ -34,4 +52,14 @@
   <div class="section-header"><h2 class="section-title">最近提交</h2><span class="section-note">原始观察</span></div>
   <div class="observation-list">{% for o,p in observations %}<article class="observation"><div class="observation-head"><div><span class="badge" data-type="{{ o.kind }}">{{ o.kind }}</span> <span class="muted">{{ p.name }}</span></div><time class="faint">{{ o.created_at|pretty_datetime }}</time></div><p class="content">{{ o.content[:260] }}{% if o.content|length > 260 %}…{% endif %}</p></article>{% else %}<div class="empty-state">暂无提交</div>{% endfor %}</div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.setInterval(() => {
+    if (document.visibilityState === "visible" && !document.querySelector("input:focus, select:focus")) {
+      window.location.reload();
+    }
+  }, 5000);
+</script>
 {% endblock %}

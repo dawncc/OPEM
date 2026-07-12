@@ -88,19 +88,28 @@ def memory_session_end(
 
 
 @mcp.tool()
-def memory_chat_submit(project: str, session_id: str, messages: list[dict], source_host: str | None = None) -> dict:
+def memory_chat_submit(
+    project: str, session_id: str, messages: list[dict], source_host: str | None = None,
+    session_status: Literal["active", "completed"] | None = None,
+    session_summary: str | None = None,
+) -> dict:
     """Store the complete user, assistant, system, and tool chat transcript separately from summarized Memory."""
     normalized = []
     for index, message in enumerate(messages):
         normalized.append({
             "role": message.get("role", "user"),
             "content": str(message.get("content", "")),
-            "sequence": int(message.get("sequence", index)),
+            "sequence": int(message["sequence"]) if message.get("sequence") is not None else index,
+            "event_id": message.get("event_id"),
             "created_at": message.get("created_at"),
             "duration_ms": message.get("duration_ms"),
             "metadata": message.get("metadata", {}),
         })
-    payload = {"project": project, "session_id": session_id, "source_host": source_host or socket.gethostname(), "messages": normalized}
+    payload = {
+        "project": project, "session_id": session_id,
+        "source_host": source_host or socket.gethostname(), "messages": normalized,
+        "session_status": session_status, "session_summary": session_summary,
+    }
     try:
         flushed = flush_pending()
         response = httpx.post(f"{SERVER_URL}/api/v1/chat/messages", json=payload, timeout=15)

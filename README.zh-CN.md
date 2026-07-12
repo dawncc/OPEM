@@ -1,14 +1,16 @@
-# Codex 局域网记忆系统
+# Onevom
+
+**One Personal Evolving Memory System（个人演进记忆系统）**
 
 [English](README.md) | **简体中文**
 
 [Sites 在线展示](https://codex-lan-memory.dawn-cc022.chatgpt.site) · 仅所有者可访问
 
-一套轻量、可自行部署的 Codex 记忆与执行链路系统。不同机器上的 Codex CLI、Desktop 或 Remote 实例通过本地 MCP 桥接进程提交完整对话、长期观察和工具执行结果；统一的 Python 服务负责保存原始历史、归并长期 Memory、执行混合召回，并提供简洁的网页界面。
+Onevom 是 **One Personal Evolving Memory System** 的缩写。它归个人所有，汇总多个服务器和 Codex 实例产生的完整对话、长期观察及工具执行结果，将其沉淀为可召回的长期知识，并在持续使用中不断演进。
 
 > MVP 边界：可信局域网 HTTP、单台共享服务器、SQLite 或 PostgreSQL，暂不包含鉴权与 TLS。
 
-![Codex 局域网记忆系统概览](docs/images/overview.png)
+![Onevom 系统概览](docs/images/overview.png)
 
 ## 核心能力
 
@@ -244,9 +246,24 @@ ssh -N -R 18000:127.0.0.1:8000 <remote-host>
 | `MEMORY_DAILY_REFRESH_SECONDS` | `60` | 每日总结刷新间隔。 |
 | `MEMORY_TIMEZONE` | `Asia/Shanghai` | 每日总结使用的时区。 |
 
-## 可选 Session End Hook
+## 实时 Codex Hook（推荐）
 
-设置 `MEMORY_SERVER_URL`，确保 Hook 使用的 Python 安装了 `httpx`，然后将 `hooks/session-end.py` 注册到 Codex `Stop` 和 `PreCompact`。如果服务端暂时不可用，Hook 会写入 `$CODEX_HOME/codex-memory/pending.jsonl`，MCP 桥接进程会在后续调用时自动补传。
+仅配置 MCP/Skill 时，记录依赖 Codex 主动调用工具，可能遗漏普通请求。请在每台 Codex 客户端安装实时 Hook：
+
+```bash
+python scripts/install_codex_hooks.py --server http://192.168.1.100:8000
+```
+
+安装器会保留已有 Hook，并增加以下自动采集：
+
+- `UserPromptSubmit`：请求发出时立即显示用户消息，并将 Session 标记为“记录中”。
+- `PostToolUse`：工具结束后立即归档输入、输出及成功/失败状态。
+- `Stop`：每轮请求结束时保存 Codex 完整回复、更新 Session 摘要，并创建可压缩的 Observation。
+- `PreCompact`：压缩上下文前写入兜底检查点。
+
+Hook 仅使用 Python 标准库。服务端不可用时写入 `$CODEX_HOME/codex-memory/pending.jsonl`，下一次事件触发时自动补传。安装后在 Codex 中执行 `/hooks`，审核并信任新增定义，然后新建一个任务。首页每 5 秒自动刷新“实时会话”，原始聊天提交成功后立即可见；Memory 由 Worker 随后异步生成。
+
+`hooks/session-end.py` 仅为旧配置兼容入口，新部署应使用 `hooks/capture.py`。
 
 ## 工程结构
 

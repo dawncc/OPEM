@@ -1,12 +1,34 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /absolute/path/to/hooks/capture.py",
+            "statusMessage": "onevom: capturing request"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /absolute/path/to/hooks/capture.py",
+            "statusMessage": "onevom: archiving tool result"
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "python /absolute/path/to/hooks/session-end.py",
-            "statusMessage": "codex-memory: saving pre-compaction summary"
+            "command": "python /absolute/path/to/hooks/capture.py",
+            "statusMessage": "onevom: saving pre-compaction summary"
           }
         ]
       }
@@ -16,8 +38,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python /absolute/path/to/hooks/session-end.py",
-            "statusMessage": "codex-memory: saving session summary"
+            "command": "python /absolute/path/to/hooks/capture.py",
+            "statusMessage": "onevom: saving session summary"
           }
         ]
       }

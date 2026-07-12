@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}记忆日历 · Codex Memory{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}记忆日历 · Onevom{% endblock %}{% block content %}
 <section class="hero"><div class="hero-copy"><p class="eyebrow">Memory Calendar</p><h1 class="page-title">记忆日历</h1><p class="subtitle">按日期回顾每天的工作轨迹和自动汇总。</p></div></section>
 <div class="calendar-toolbar"><div class="actions"><a class="button icon" aria-label="上个月" href="/calendar?year={{ previous.year }}&month={{ previous.month }}">‹</a><a class="button" href="/calendar?year={{ today.year }}&month={{ today.month }}">今天</a></div><h2 class="calendar-title">{{ year }} 年 {{ month }} 月</h2><a class="button icon" aria-label="下个月" href="/calendar?year={{ following.year }}&month={{ following.month }}">›</a></div>
 <div class="calendar-head">{% for name in ['周一','周二','周三','周四','周五','周六','周日'] %}<span>{{ name }}</span>{% endfor %}</div>

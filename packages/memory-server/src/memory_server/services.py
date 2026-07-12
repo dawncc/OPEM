@@ -83,10 +83,32 @@ def create_chat_batch(db: DbSession, payload: ChatBatchCreate) -> tuple[Session,
     project = get_or_create_project(db, payload.project)
     stub = ObservationCreate(content="chat session", kind="observation", project=payload.project, session_id=payload.session_id, source_host=payload.source_host)
     session = get_or_create_session(db, project, stub)
+    if payload.session_status == "active":
+        session.status = "active"
+        session.ended_at = None
+    elif payload.session_status == "completed":
+        session.status = "completed"
+        session.ended_at = datetime.now(timezone.utc)
+    if payload.session_summary:
+        session.summary = payload.session_summary
+
     accepted = duplicates = 0
     existing_sequences = set(db.scalars(select(ChatMessage.sequence).where(ChatMessage.session_id == session.id)).all())
+    existing_event_ids = set(db.scalars(select(ChatMessage.event_id).where(
+        ChatMessage.session_id == session.id, ChatMessage.event_id.is_not(None)
+    )).all())
+    next_sequence = max(existing_sequences, default=-1) + 1
     for message in payload.messages:
-        if message.sequence in existing_sequences:
+        if message.event_id and message.event_id in existing_event_ids:
+            duplicates += 1
+            continue
+        sequence = message.sequence
+        if sequence is None:
+            while next_sequence in existing_sequences:
+                next_sequence += 1
+            sequence = next_sequence
+            next_sequence += 1
+        elif sequence in existing_sequences:
             duplicates += 1
             continue
         metadata = dict(message.metadata)
@@ -94,7 +116,7 @@ def create_chat_batch(db: DbSession, payload: ChatBatchCreate) -> tuple[Session,
             metadata["duration_ms"] = message.duration_ms
         chat_message = ChatMessage(
             session_id=session.id, role=message.role, content=message.content,
-            sequence=message.sequence, metadata_=metadata,
+            sequence=sequence, event_id=message.event_id, metadata_=metadata,
             created_at=message.created_at or datetime.now(timezone.utc),
         )
         db.add(chat_message)
@@ -102,7 +124,9 @@ def create_chat_batch(db: DbSession, payload: ChatBatchCreate) -> tuple[Session,
         if message.role == "tool":
             from .tool_archive import archive_tool_message
             archive_tool_message(db, project, session, chat_message)
-        existing_sequences.add(message.sequence)
+        existing_sequences.add(sequence)
+        if message.event_id:
+            existing_event_ids.add(message.event_id)
         accepted += 1
     db.commit()
     return session, accepted, duplicates

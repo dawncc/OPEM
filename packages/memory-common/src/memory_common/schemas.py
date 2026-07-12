@@ -38,7 +38,8 @@ class SubmitResponse(BaseModel):
 class ChatMessageCreate(BaseModel):
     role: str = Field(pattern="^(user|assistant|system|tool)$")
     content: str = Field(min_length=1, max_length=500_000)
-    sequence: int = Field(ge=0)
+    sequence: int | None = Field(default=None, ge=0)
+    event_id: str | None = Field(default=None, min_length=1, max_length=255)
     created_at: datetime | None = None
     duration_ms: float | None = Field(default=None, ge=0, le=86_400_000)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -48,6 +49,8 @@ class ChatBatchCreate(BaseModel):
     project: str = Field(min_length=1, max_length=200)
     session_id: str = Field(min_length=1, max_length=200)
     source_host: str | None = Field(default=None, max_length=255)
+    session_status: str | None = Field(default=None, pattern="^(active|completed)$")
+    session_summary: str | None = Field(default=None, max_length=100_000)
     messages: list[ChatMessageCreate] = Field(min_length=1, max_length=2000)
 
 

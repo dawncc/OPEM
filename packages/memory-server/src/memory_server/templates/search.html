@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}搜索 · Codex Memory{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}搜索 · Onevom{% endblock %}{% block content %}
 <section class="hero"><div class="hero-copy"><p class="eyebrow">Recall</p><h1 class="page-title">搜索记忆</h1><p class="subtitle">从跨项目的长期 Memory 中快速召回相关结论与来源。</p></div></section>
 <div class="search-panel"><form class="search-form"><input name="q" value="{{ q }}" placeholder="输入关键词，例如：SQLite 本机部署" aria-label="搜索关键词"><select name="project" aria-label="选择项目"><option value="">全部项目</option>{% for p in projects %}<option value="{{ p.name }}" {% if selected_project==p.name %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select><button class="button primary" type="submit">搜索</button></form></div>
 {% if q %}<div class="section-header"><h2 class="section-title">“{{ q }}” 的结果</h2><span class="section-note">{{ results|length }} 条</span></div>{% endif %}

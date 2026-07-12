@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}Trace {{ trace.session.external_session_id }} · Codex Memory{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Trace {{ trace.session.external_session_id }} · Onevom{% endblock %}{% block content %}
 <div class="breadcrumb"><a href="/traces">Trace</a><span>›</span><a href="/projects/{{ trace.session.project.id }}">{{ trace.session.project.name }}</a><span>›</span><span>Session</span></div>
 <section class="hero"><div class="hero-copy"><p class="eyebrow">Session Trace</p><h1 class="page-title detail-title">{{ trace.session.external_session_id }}</h1><p class="subtitle">{{ trace.session.source_host or '未知来源' }} · 开始于 {{ trace.session.started_at|pretty_datetime }}</p></div><div class="actions"><a class="button" href="/sessions/{{ trace.session.id }}">完整聊天</a></div></section>
 

@@ -292,6 +292,20 @@ def test_trace_duration_parsing_and_tool_classification():
     assert classify_tool_kind({"command": "rg TODO packages"}, "shell") == "search"
 
 
+def test_trace_template_escapes_request_content():
+    now = datetime.now(timezone.utc)
+    session = SimpleNamespace(
+        id=uuid4(), external_session_id="trace-safe", source_host="test", started_at=now,
+        project=SimpleNamespace(id=uuid4(), name="demo"),
+        chat_messages=[SimpleNamespace(id=uuid4(), sequence=0, role="user", content="<script>alert(1)</script>", metadata_={}, created_at=now)],
+    )
+    html = templates.env.get_template("trace.html").render(
+        request=SimpleNamespace(url=SimpleNamespace(path=f"/traces/{session.id}")), trace=build_session_trace(session)
+    )
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
 def test_session_template_escapes_chat_html():
     now = datetime.now(timezone.utc)
     session = SimpleNamespace(

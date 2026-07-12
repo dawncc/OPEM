@@ -40,12 +40,16 @@ class Session(Base):
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
-    __table_args__ = (UniqueConstraint("session_id", "sequence"),)
+    __table_args__ = (
+        UniqueConstraint("session_id", "sequence"),
+        UniqueConstraint("session_id", "event_id"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     role: Mapped[str] = mapped_column(String(20), index=True)
     content: Mapped[str] = mapped_column(Text)
     sequence: Mapped[int] = mapped_column(Integer)
+    event_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     session: Mapped[Session] = relationship(back_populates="chat_messages")
