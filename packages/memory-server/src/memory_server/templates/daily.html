@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block title %}{{ summary_date }} · 每日记忆{% endblock %}{% block content %}
+<div class="breadcrumb"><a href="/calendar?year={{ summary_date.year }}&month={{ summary_date.month }}">记忆日历</a><span>›</span><span>{{ summary_date }}</span></div>
+<section class="hero"><div class="hero-copy"><p class="eyebrow">Daily Digest</p><h1 class="page-title detail-title">{{ summary_date }}</h1><p class="subtitle">当天的项目活动与长期记忆摘要。</p></div></section>
+<div class="daily-grid">{% for s in summaries %}<article class="section"><div class="section-header"><div><h2 class="section-title"><a class="table-title" href="/projects/{{ s.project.id }}">{{ s.project.name }}</a></h2><div class="metadata"><span class="meta-chip">{{ s.observation_count }} 条观察</span><span class="meta-chip">{{ s.memory_count }} 条记忆</span></div></div><time class="section-note">更新于 {{ s.updated_at|pretty_datetime }}</time></div><div class="summary-copy content">{{ s.content }}</div></article>{% else %}<div class="section empty-state"><div class="empty-icon">◷</div><h2 class="section-title">这一天很安静</h2><p>还没有收到任何记忆记录。</p></div>{% endfor %}</div>
+{% endblock %}

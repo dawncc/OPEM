@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+{% set labels = {'projects':'项目','sessions':'会话','observations':'观察','memories':'记忆','pending':'待处理'} %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Personal Intelligence</p>
+    <h1 class="page-title">你的 Codex 记忆</h1>
+    <p class="subtitle">集中查看跨设备的对话、决策与长期知识，让每一次工作都能被重新找到。</p>
+  </div>
+  <div class="actions"><a class="button" href="/calendar">查看日历</a><a class="button primary" href="/search">搜索记忆</a></div>
+</section>
+
+<section class="stats-grid" aria-label="数据概览">
+  {% for key,value in counts.items() %}<div class="stat-card"><span class="stat-dot"></span><span class="stat-label">{{ labels.get(key,key) }}</span><strong class="stat-value">{{ value }}</strong></div>{% endfor %}
+</section>
+
+<div class="layout-two">
+  <section class="section flush">
+    <div class="section-header"><h2 class="section-title">最近记忆</h2><a class="section-note" href="/search">查看全部 →</a></div>
+    <div class="table-wrap"><table><thead><tr><th>项目</th><th>标题</th><th>类型</th><th>更新时间</th></tr></thead><tbody>
+      {% for m,p in memories %}<tr><td class="muted">{{ p.name }}</td><td><a class="table-title" href="/memories/{{ m.id }}">{{ m.title }}</a></td><td><span class="badge" data-type="{{ m.memory_type }}">{{ m.memory_type }}</span></td><td class="muted nowrap">{{ m.updated_at|pretty_datetime }}</td></tr>{% else %}<tr><td colspan="4"><div class="empty-state">暂无 Memory</div></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+
+  <aside>
+    <section class="section">
+      <div class="section-header"><h2 class="section-title">项目</h2><span class="section-note">{{ projects|length }} 个</span></div>
+      <div class="project-list">{% for p in projects %}<a class="project-link" href="/projects/{{ p.id }}"><span class="project-name">{{ p.name }}</span><span class="chevron">›</span></a>{% else %}<div class="empty-state"><div class="empty-icon">⌁</div>尚未收到项目数据</div>{% endfor %}</div>
+    </section>
+  </aside>
+</div>
+
+<section class="section">
+  <div class="section-header"><h2 class="section-title">最近提交</h2><span class="section-note">原始观察</span></div>
+  <div class="observation-list">{% for o,p in observations %}<article class="observation"><div class="observation-head"><div><span class="badge" data-type="{{ o.kind }}">{{ o.kind }}</span> <span class="muted">{{ p.name }}</span></div><time class="faint">{{ o.created_at|pretty_datetime }}</time></div><p class="content">{{ o.content[:260] }}{% if o.content|length > 260 %}…{% endif %}</p></article>{% else %}<div class="empty-state">暂无提交</div>{% endfor %}</div>
+</section>
+{% endblock %}

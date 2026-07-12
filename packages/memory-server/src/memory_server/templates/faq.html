@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}失败 FAQ · Codex Memory{% endblock %}{% block content %}
+<div class="breadcrumb"><a href="/tools">工具归档</a><span>›</span><span>失败 FAQ</span></div>
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Failure Knowledge</p>
+    <h1 class="page-title">失败 FAQ</h1>
+    <p class="subtitle">从失败状态与原始输出中提取可核对的理由、错误分类和处理建议。所有结论均保留原始会话证据。</p>
+  </div>
+  <div class="actions"><a class="button" href="/tools?status=failed">查看失败归档</a></div>
+</section>
+
+<div class="faq-list">
+{% for execution in executions %}
+  <article class="faq-card">
+    <div class="archive-meta"><span>{{ execution.project.name }}</span><span>·</span><span>{{ execution.tool_name }}</span><span>·</span><time>{{ execution.created_at|pretty_datetime }}</time></div>
+    <h2 class="faq-question">{{ execution.faq_question or ('为什么 ' ~ execution.tool_name ~ ' 工具执行失败？') }}</h2>
+    <div class="faq-answer content">{{ execution.faq_answer or '该失败尚未提取出明确理由，请查看原始证据。' }}</div>
+    <div class="faq-evidence"><b>原始证据</b><div class="content">{{ execution.evidence or execution.error_reason or '工具报告失败，但未返回明确错误文本。' }}</div></div>
+    <div class="archive-actions"><span>分类 {{ execution.error_category or 'unknown' }} · 签名 {{ execution.failure_signature or '未生成' }}</span><a href="/sessions/{{ execution.session.id }}">追溯完整会话 →</a></div>
+  </article>
+{% else %}
+  <section class="section"><div class="empty-state"><div class="empty-icon">✓</div><p>尚未归档失败工具，因此没有 FAQ。</p></div></section>
+{% endfor %}
+</div>
+{% endblock %}

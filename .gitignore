@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+*.db
+*.db-shm
+*.db-wal
+.remote-codex-home/
+codex-remote-test-result.txt
+*.log

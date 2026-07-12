@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% block title %}工具归档 · Codex Memory{% endblock %}{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Tool Archive</p>
+    <h1 class="page-title">工具归档</h1>
+    <p class="subtitle">完整保存每次工具执行。明确成功的结果进入 Memory，失败结果整理为可追溯 FAQ，状态不明的记录仅归档。</p>
+  </div>
+  <div class="actions"><a class="button" href="/faq">失败 FAQ</a><a class="button primary" href="/search?q=tool-success">召回成功上下文</a></div>
+</section>
+
+<section class="section">
+  <div class="section-header">
+    <h2 class="section-title">执行记录</h2>
+    <span class="section-note">最多显示最近 200 条</span>
+  </div>
+  <nav class="filter-pills" aria-label="工具状态筛选">
+    <a class="filter-pill {% if not selected_status %}active{% endif %}" href="/tools">全部<span class="filter-count">{{ counts.success + counts.failed + counts.unknown }}</span></a>
+    <a class="filter-pill {% if selected_status == 'success' %}active{% endif %}" href="/tools?status=success">成功<span class="filter-count">{{ counts.success }}</span></a>
+    <a class="filter-pill {% if selected_status == 'failed' %}active{% endif %}" href="/tools?status=failed">失败<span class="filter-count">{{ counts.failed }}</span></a>
+    <a class="filter-pill {% if selected_status == 'unknown' %}active{% endif %}" href="/tools?status=unknown">待确认<span class="filter-count">{{ counts.unknown }}</span></a>
+  </nav>
+</section>
+
+<div class="archive-grid">
+{% for execution in executions %}
+  <article class="archive-card {{ execution.status }}">
+    <div class="archive-head"><span class="archive-name">{{ execution.tool_name }}</span><span class="status-badge {{ execution.status }}">{% if execution.status == 'success' %}成功{% elif execution.status == 'failed' %}失败{% else %}待确认{% endif %}</span></div>
+    <div class="archive-meta"><span>{{ execution.project.name }}</span><span>·</span><time>{{ execution.created_at|pretty_datetime }}</time>{% if execution.error_category %}<span>·</span><span>{{ execution.error_category }}</span>{% endif %}</div>
+    {% if execution.error_reason %}<p class="archive-reason"><b>失败理由：</b>{{ execution.error_reason }}</p>{% endif %}
+    {% if execution.input_text %}<details><summary class="muted">查看调用输入</summary><pre class="archive-input">{{ execution.input_text }}</pre></details>{% endif %}
+    <details><summary class="muted">查看完整原始输出 · {{ execution.output_text|length }} 字符</summary><pre class="archive-output">{{ execution.output_text }}</pre></details>
+    <div class="archive-actions"><span>{% if execution.observation_id %}已进入 Memory 处理链路{% else %}仅原始归档{% endif %}</span><a href="/sessions/{{ execution.session.id }}">查看会话 →</a></div>
+  </article>
+{% else %}
+  <section class="section" style="grid-column:1/-1"><div class="empty-state"><div class="empty-icon">⌘</div><p>当前筛选下还没有工具执行记录。</p></div></section>
+{% endfor %}
+</div>
+{% endblock %}

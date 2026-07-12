@@ -1,0 +1,47 @@
+[project]
+name = "codex-lan-memory"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.13",
+  "fastapi>=0.115",
+  "httpx>=0.27",
+  "jinja2>=3.1",
+  "mcp>=1.2",
+  "pgvector>=0.3",
+  "psycopg[binary]>=3.2",
+  "pydantic-settings>=2.6",
+  "sqlalchemy>=2.0",
+  "uvicorn>=0.32",
+]
+
+[project.optional-dependencies]
+embedding = ["sentence-transformers>=3.3"]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+codex-memory-server = "memory_server.main:run"
+codex-memory-worker = "memory_worker.main:run"
+codex-memory-mcp = "memory_mcp.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "packages/memory-common/src/memory_common",
+  "packages/memory-server/src/memory_server",
+  "packages/memory-worker/src/memory_worker",
+  "packages/memory-mcp/src/memory_mcp",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "packages/memory-common/src",
+  "packages/memory-server/src",
+  "packages/memory-worker/src",
+  "packages/memory-mcp/src",
+]
+testpaths = ["tests"]
+

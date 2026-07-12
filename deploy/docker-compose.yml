@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: memory
+      POSTGRES_USER: memory
+      POSTGRES_PASSWORD: memory
+    volumes: ["memory_postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memory"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  memory-server:
+    build: {context: ..}
+    env_file: ../.env
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    command: ["sh", "-c", "alembic upgrade head && codex-memory-server"]
+    restart: unless-stopped
+  memory-worker:
+    build: {context: ..}
+    env_file: ../.env
+    depends_on:
+      memory-server: {condition: service_started}
+    command: ["codex-memory-worker"]
+    restart: unless-stopped
+volumes:
+  memory_postgres:
+

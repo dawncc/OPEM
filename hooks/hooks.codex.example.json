@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /absolute/path/to/hooks/session-end.py",
+            "statusMessage": "codex-memory: saving pre-compaction summary"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /absolute/path/to/hooks/session-end.py",
+            "statusMessage": "codex-memory: saving session summary"
+          }
+        ]
+      }
+    ]
+  }
+}
