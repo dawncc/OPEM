@@ -116,6 +116,21 @@ class Memory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now, index=True)
     sources: Mapped[list["MemorySource"]] = relationship(back_populates="memory", cascade="all, delete-orphan")
+    feedback: Mapped[list["MemoryFeedback"]] = relationship(back_populates="memory", cascade="all, delete-orphan")
+
+
+class MemoryFeedback(Base):
+    __tablename__ = "memory_feedback"
+    __table_args__ = (UniqueConstraint("idempotency_key"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    memory_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("memories.id", ondelete="CASCADE"), index=True)
+    outcome: Mapped[str] = mapped_column(String(20), index=True)
+    query: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    session_id: Mapped[str | None] = mapped_column(String(200), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    memory: Mapped[Memory] = relationship(back_populates="feedback")
 
 
 class MemorySource(Base):

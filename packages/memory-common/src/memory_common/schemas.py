@@ -51,6 +51,7 @@ class ChatBatchCreate(BaseModel):
     source_host: str | None = Field(default=None, max_length=255)
     session_status: str | None = Field(default=None, pattern="^(active|completed)$")
     session_summary: str | None = Field(default=None, max_length=100_000)
+    deduplicate_by_content: bool = False
     messages: list[ChatMessageCreate] = Field(min_length=1, max_length=2000)
 
 
@@ -95,6 +96,25 @@ class RecallItem(BaseModel):
 class RecallResponse(BaseModel):
     items: list[RecallItem]
     context: str = ""
+
+
+class MemoryFeedbackCreate(BaseModel):
+    memory_id: UUID
+    outcome: str = Field(pattern="^(helpful|irrelevant|harmful)$")
+    query: str | None = Field(default=None, max_length=4000)
+    reason: str | None = Field(default=None, max_length=4000)
+    session_id: str | None = Field(default=None, max_length=200)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+
+
+class MemoryFeedbackResponse(BaseModel):
+    feedback_id: UUID
+    memory_id: UUID
+    duplicate: bool = False
+    helpful: int
+    irrelevant: int
+    harmful: int
+    confidence: float
 
 
 class HealthResponse(BaseModel):

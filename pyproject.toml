@@ -27,6 +27,7 @@ dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
 codex-memory-server = "memory_server.main:run"
 codex-memory-worker = "memory_worker.main:run"
 codex-memory-mcp = "memory_mcp.main:run"
+codex-memory-sync = "memory_mcp.history:run"
 
 [build-system]
 requires = ["hatchling"]

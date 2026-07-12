@@ -1,4 +1,6 @@
 import importlib.util
+import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from sqlalchemy import create_engine, func, select
@@ -8,6 +10,7 @@ from memory_common.schemas import ChatBatchCreate
 from memory_server.db import Base
 from memory_server.models import ChatMessage, Observation, ProcessingJob, Session
 from memory_server.services import create_chat_batch
+from memory_common.codex_history import parse_rollout
 
 
 def load_capture_module():
@@ -92,3 +95,100 @@ def test_turn_observation_is_processed_into_memory_input():
         assert not duplicate
         assert db.scalar(select(func.count()).select_from(Observation)) == 1
         assert db.scalar(select(func.count()).select_from(ProcessingJob).where(ProcessingJob.observation_id == observation.id)) == 1
+
+
+def test_history_import_and_live_hook_share_event_ids_without_duplicates(tmp_path):
+    rollout = tmp_path / "rollout-2026-07-12T00-00-00-session-history.jsonl"
+    records = [
+        {"timestamp": "2026-07-12T00:00:00Z", "type": "session_meta", "payload": {"id": "session-history", "cwd": str(tmp_path / "demo")}},
+        {"timestamp": "2026-07-12T00:00:01Z", "type": "turn_context", "payload": {"turn_id": "turn-1", "cwd": str(tmp_path / "demo")}},
+        {"timestamp": "2026-07-12T00:00:02Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fix tests"}], "internal_chat_message_metadata_passthrough": {"turn_id": "turn-1"}}},
+        {"timestamp": "2026-07-12T00:00:03Z", "type": "response_item", "payload": {"type": "function_call", "id": "fc-1", "call_id": "call-1", "name": "shell", "arguments": "pytest", "internal_chat_message_metadata_passthrough": {"turn_id": "turn-1"}}},
+        {"timestamp": "2026-07-12T00:00:04Z", "type": "response_item", "payload": {"type": "function_call_output", "call_id": "call-1", "output": {"exit_code": 0, "output": "2 passed"}, "internal_chat_message_metadata_passthrough": {"turn_id": "turn-1"}}},
+        {"timestamp": "2026-07-12T00:00:05Z", "type": "response_item", "payload": {"type": "message", "id": "msg-1", "role": "assistant", "phase": "final_answer", "content": [{"type": "output_text", "text": "fixed"}], "internal_chat_message_metadata_passthrough": {"turn_id": "turn-1"}}},
+        {"timestamp": "2026-07-12T00:00:06Z", "type": "event_msg", "payload": {"type": "task_complete", "turn_id": "turn-1", "last_agent_message": "fixed", "duration_ms": 1200}},
+    ]
+    rollout.write_text("\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8")
+    parsed = parse_rollout(rollout)
+    assert parsed and parsed.completed_turns == 1 and not parsed.has_active_turn
+    assert [item["event_id"] for item in parsed.messages] == [
+        "turn:turn-1:user", "tool:call-1", "turn:turn-1:assistant",
+    ]
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    LocalSession = sessionmaker(engine, expire_on_commit=False)
+    with LocalSession() as db:
+        historical = ChatBatchCreate(
+            project=parsed.project, session_id=parsed.session_id, session_status="completed",
+            deduplicate_by_content=True, messages=parsed.messages,
+        )
+        _, accepted, duplicates = create_chat_batch(db, historical)
+        assert (accepted, duplicates) == (3, 0)
+        live = ChatBatchCreate(project=parsed.project, session_id=parsed.session_id, messages=[
+            {"role": "user", "content": "fix tests", "event_id": "turn:turn-1:user"},
+            {"role": "tool", "content": json.dumps({"exit_code": 0, "output": "2 passed"}), "event_id": "tool:call-1"},
+            {"role": "assistant", "content": "fixed", "event_id": "turn:turn-1:assistant"},
+        ])
+        _, accepted, duplicates = create_chat_batch(db, live)
+        assert (accepted, duplicates) == (0, 3)
+        assert db.scalar(select(func.count()).select_from(ChatMessage)) == 3
+
+
+def test_history_content_fallback_deduplicates_legacy_rows_without_event_ids():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    LocalSession = sessionmaker(engine, expire_on_commit=False)
+    with LocalSession() as db:
+        legacy = ChatBatchCreate(project="demo", session_id="legacy", messages=[
+            {"role": "user", "content": "same request", "sequence": 0},
+            {"role": "assistant", "content": "same answer", "sequence": 1},
+        ])
+        create_chat_batch(db, legacy)
+        historical = ChatBatchCreate(project="demo", session_id="legacy", deduplicate_by_content=True, messages=[
+            {"role": "user", "content": "same request", "event_id": "turn:old:user"},
+            {"role": "assistant", "content": "same answer", "event_id": "turn:old:assistant"},
+        ])
+        _, accepted, duplicates = create_chat_batch(db, historical)
+        assert (accepted, duplicates) == (0, 2)
+        assert db.scalar(select(func.count()).select_from(ChatMessage)) == 2
+
+
+def test_history_parser_skips_unfinished_turns(tmp_path):
+    rollout = tmp_path / "rollout-2026-07-12T00-00-00-active.jsonl"
+    records = [
+        {"timestamp": "2026-07-12T00:00:00Z", "type": "session_meta", "payload": {"id": "active", "cwd": str(tmp_path)}},
+        {"timestamp": "2026-07-12T00:00:01Z", "type": "turn_context", "payload": {"turn_id": "turn-active"}},
+        {"timestamp": "2026-07-12T00:00:02Z", "type": "event_msg", "payload": {"type": "task_started"}},
+        {"timestamp": "2026-07-12T00:00:03Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "still running"}], "internal_chat_message_metadata_passthrough": {"turn_id": "turn-active"}}},
+    ]
+    rollout.write_text("\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8")
+    assert parse_rollout(rollout) is None
+
+
+def test_history_sync_and_hook_can_submit_same_event_concurrently(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'concurrent.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    LocalSession = sessionmaker(engine, expire_on_commit=False)
+    payloads = [
+        ChatBatchCreate(project="demo", session_id="concurrent", messages=[
+            {"role": "assistant", "content": "done", "event_id": "turn:1:assistant"},
+        ]),
+        ChatBatchCreate(project="demo", session_id="concurrent", deduplicate_by_content=True, messages=[
+            {"role": "assistant", "content": "done", "event_id": "turn:1:assistant"},
+        ]),
+    ]
+
+    def submit(payload):
+        with LocalSession() as db:
+            _, accepted, duplicates = create_chat_batch(db, payload)
+            return accepted, duplicates
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(submit, payloads))
+    assert sorted(results) == [(0, 1), (1, 0)]
+    with LocalSession() as db:
+        assert db.scalar(select(func.count()).select_from(ChatMessage)) == 1

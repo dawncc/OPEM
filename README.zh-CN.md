@@ -265,6 +265,30 @@ Hook 仅使用 Python 标准库。服务端不可用时写入 `$CODEX_HOME/codex
 
 `hooks/session-end.py` 仅为旧配置兼容入口，新部署应使用 `hooks/capture.py`。
 
+### 补录已经完成的历史聊天
+
+Codex 会把本地会话保存在 `$CODEX_HOME/sessions`。安装新版客户端后，可先预览将要同步的范围：
+
+```bash
+codex-memory-sync --server http://192.168.1.100:8000 --since 2026-07-01 --dry-run
+```
+
+确认数量后执行实际同步：
+
+```bash
+codex-memory-sync --server http://192.168.1.100:8000 --since 2026-07-01
+```
+
+源码检出环境也可以运行：
+
+```bash
+python scripts/sync_codex_history.py --server http://127.0.0.1:8000 --since 2026-07-01
+```
+
+同步器只导入已经出现 `task_complete` 的轮次，仍在执行或异常中断且没有完成标记的轮次不会导入。历史同步与实时 Hook 共用 `turn_id`、`call_id` 和 `event_id`；重复执行会返回 `duplicates`，不会生成重复聊天。对于升级前没有 `event_id` 的旧记录，会按角色、完整内容和出现次数进行兼容去重。
+
+历史 rollout JSONL 是 Codex 的本地会话文件，而不是稳定的 Hook 协议；解析器采用容错读取，无法识别的行会跳过。建议保留实时 Hook 作为日常同步方式，只把历史同步器用于补录。
+
 ## 工程结构
 
 ```text

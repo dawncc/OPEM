@@ -70,6 +70,25 @@ def memory_recall(query: str, project: str | None = None, limit: int = 8) -> dic
 
 
 @mcp.tool()
+def memory_feedback(
+    memory_id: str,
+    outcome: Literal["helpful", "irrelevant", "harmful"],
+    query: str | None = None,
+    reason: str | None = None,
+    session_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict:
+    """Report recall utility so future ranking can evolve from explicit evidence."""
+    payload = {
+        "memory_id": memory_id, "outcome": outcome, "query": query,
+        "reason": reason, "session_id": session_id, "idempotency_key": idempotency_key,
+    }
+    response = httpx.post(f"{SERVER_URL}/api/v1/memories/feedback", json=payload, timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+@mcp.tool()
 def memory_session_end(
     project: str,
     session_id: str,
@@ -92,6 +111,7 @@ def memory_chat_submit(
     project: str, session_id: str, messages: list[dict], source_host: str | None = None,
     session_status: Literal["active", "completed"] | None = None,
     session_summary: str | None = None,
+    deduplicate_by_content: bool = False,
 ) -> dict:
     """Store the complete user, assistant, system, and tool chat transcript separately from summarized Memory."""
     normalized = []
@@ -109,6 +129,7 @@ def memory_chat_submit(
         "project": project, "session_id": session_id,
         "source_host": source_host or socket.gethostname(), "messages": normalized,
         "session_status": session_status, "session_summary": session_summary,
+        "deduplicate_by_content": deduplicate_by_content,
     }
     try:
         flushed = flush_pending()

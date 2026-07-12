@@ -1,18 +1,54 @@
 import math
 import re
+import threading
 import unicodedata
 from collections import Counter
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession, selectinload
 
-from memory_common.schemas import ChatBatchCreate, ObservationCreate, RecallItem
+from memory_common.schemas import ChatBatchCreate, MemoryFeedbackCreate, ObservationCreate, RecallItem
 
-from .models import ChatMessage, Memory, MemorySource, Observation, ProcessingJob, Project, Session
+from .models import ChatMessage, Memory, MemoryFeedback, MemorySource, Observation, ProcessingJob, Project, Session
 
 _embedding_model = None
+_chat_ingest_lock = threading.RLock()
+
+
+def feedback_confidence(counts: dict[str, int]) -> float:
+    """Calibrate from explicit evidence using a 0.7 Bayesian prior."""
+    helpful = counts.get("helpful", 0)
+    negative = counts.get("irrelevant", 0) + 2 * counts.get("harmful", 0)
+    return round(max(0.05, min(0.98, (3.5 + helpful) / (5 + helpful + negative))), 4)
+
+
+def feedback_counts(db: DbSession, memory_id) -> dict[str, int]:
+    rows = db.execute(
+        select(MemoryFeedback.outcome, func.count(MemoryFeedback.id))
+        .where(MemoryFeedback.memory_id == memory_id)
+        .group_by(MemoryFeedback.outcome)
+    ).all()
+    return {outcome: count for outcome, count in rows}
+
+
+def create_memory_feedback(db: DbSession, payload: MemoryFeedbackCreate):
+    memory = db.get(Memory, payload.memory_id)
+    if memory is None:
+        raise LookupError("memory not found")
+    if payload.idempotency_key:
+        existing = db.scalar(select(MemoryFeedback).where(MemoryFeedback.idempotency_key == payload.idempotency_key))
+        if existing:
+            return existing, memory, feedback_counts(db, memory.id), True
+    item = MemoryFeedback(**payload.model_dump())
+    db.add(item)
+    db.flush()
+    counts = feedback_counts(db, memory.id)
+    memory.confidence = feedback_confidence(counts)
+    db.commit()
+    db.refresh(item)
+    return item, memory, counts, False
 
 
 def query_embedding(value: str) -> list[float] | None:
@@ -80,6 +116,14 @@ def create_observation(db: DbSession, payload: ObservationCreate) -> tuple[Obser
 
 
 def create_chat_batch(db: DbSession, payload: ChatBatchCreate) -> tuple[Session, int, int]:
+    # Hook callbacks and a history backfill can reach the same session at the
+    # same time. Serialize the read-deduplicate-insert transaction in the MVP
+    # server process; database uniqueness remains the final safety boundary.
+    with _chat_ingest_lock:
+        return _create_chat_batch_locked(db, payload)
+
+
+def _create_chat_batch_locked(db: DbSession, payload: ChatBatchCreate) -> tuple[Session, int, int]:
     project = get_or_create_project(db, payload.project)
     stub = ObservationCreate(content="chat session", kind="observation", project=payload.project, session_id=payload.session_id, source_host=payload.source_host)
     session = get_or_create_session(db, project, stub)
@@ -97,11 +141,23 @@ def create_chat_batch(db: DbSession, payload: ChatBatchCreate) -> tuple[Session,
     existing_event_ids = set(db.scalars(select(ChatMessage.event_id).where(
         ChatMessage.session_id == session.id, ChatMessage.event_id.is_not(None)
     )).all())
+    existing_content = Counter()
+    if payload.deduplicate_by_content:
+        existing_content.update(db.execute(select(ChatMessage.role, ChatMessage.content).where(
+            ChatMessage.session_id == session.id
+        )).all())
+    incoming_content = Counter()
     next_sequence = max(existing_sequences, default=-1) + 1
     for message in payload.messages:
         if message.event_id and message.event_id in existing_event_ids:
             duplicates += 1
             continue
+        fingerprint = (message.role, message.content)
+        if payload.deduplicate_by_content:
+            incoming_content[fingerprint] += 1
+            if incoming_content[fingerprint] <= existing_content[fingerprint]:
+                duplicates += 1
+                continue
         sequence = message.sequence
         if sequence is None:
             while next_sequence in existing_sequences:
@@ -311,8 +367,8 @@ def recall(db: DbSession, query: str, project: str | None, limit: int) -> list[R
             + 0.14 * metadata[index] + 0.22 * vectors[index]
         )
         score = (
-            0.82 * content_relevance + 0.08 * coverage + 0.04 * (memory.importance / 5)
-            + 0.03 * memory.confidence + 0.03 * freshness
+            0.75 * content_relevance + 0.08 * coverage + 0.04 * (memory.importance / 5)
+            + 0.10 * memory.confidence + 0.03 * freshness
         )
         if score < 0.12:
             continue

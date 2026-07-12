@@ -15,7 +15,7 @@ Onevom, short for **One Personal Evolving Memory System**, aggregates conversati
 ## Highlights
 
 - **Cross-machine collection** — multiple Codex CLI, Desktop, or Remote hosts write to one Memory Server.
-- **MCP-first integration** — submit, recall, end sessions, archive complete chat, and check health through five MCP tools.
+- **MCP-first integration** — submit, recall, feed results back, end sessions, archive complete chat, and check health through six MCP tools.
 - **Raw history plus durable Memory** — the complete transcript remains available while reusable knowledge is compressed separately.
 - **Hybrid recall** — exact phrase, BM25, fuzzy, metadata, and optional vector similarity are fused with weighted RRF and deduplicated with MMR.
 - **Session Trace** — group each Session into user-led request paths and show Codex/tool nodes with measured or estimated timing.
@@ -173,6 +173,7 @@ The Skill instructs Codex to:
 3. archive the complete conversation and all available tool results;
 4. include `duration_ms` when exact timing is available;
 5. submit a structured summary before session end or compaction.
+6. report whether recalled memories were helpful, irrelevant, or harmful.
 
 ## MCP tools
 
@@ -180,6 +181,7 @@ The Skill instructs Codex to:
 | --- | --- |
 | `memory_submit` | Save a durable observation, decision, learning, problem, solution, or session summary. |
 | `memory_recall` | Return structured matches and a prompt-ready `<chat-memory>` context block. |
+| `memory_feedback` | Record recall utility and calibrate future ranking confidence. |
 | `memory_session_end` | Submit completed work, decisions, unresolved items, and files. |
 | `memory_chat_submit` | Store the complete chronological user/assistant/system/tool transcript. |
 | `memory_health` | Check the server/database and flush the local pending queue. |
@@ -193,6 +195,7 @@ The MVP keeps the business API intentionally small:
 | `POST` | `/api/v1/observations` | Receive durable observations and session summaries. |
 | `POST` | `/api/v1/chat/messages` | Receive complete chat batches and tool metadata. |
 | `POST` | `/api/v1/recall` | Run hybrid Memory retrieval. |
+| `POST` | `/api/v1/memories/feedback` | Record auditable recall feedback and evolve confidence. |
 | `GET` | `/api/v1/health` | Check database health and pending jobs. |
 
 Main UI routes:
@@ -213,6 +216,8 @@ Main UI routes:
 4. **Retrieve** — combine exact phrase, BM25, fuzzy, metadata, and optional embedding results.
 
 Successful tools become `tool_success` Memory. Failed tools become separate `tool_failure_faq` Memory so similar success and failure output can never be consolidated together. Unknown outcomes are archived without promotion.
+
+Recall outcomes form a bounded evolution loop: explicit feedback calibrates ranking confidence without changing application code or model weights. See [the self-evolution design](docs/self-evolution.md) for the safety boundary and roadmap.
 
 ## Trace timing
 
@@ -257,6 +262,17 @@ python scripts/install_codex_hooks.py --server http://192.168.1.100:8000
 The installer preserves existing hooks and adds `UserPromptSubmit`, `PostToolUse`, `Stop`, and `PreCompact` capture. User prompts, tool results, and final assistant messages become visible immediately; `Stop` also creates an Observation for asynchronous Memory consolidation. The standard-library-only client queues failed deliveries under `$CODEX_HOME/codex-memory/pending.jsonl` and retries them on the next lifecycle event.
 
 After installation, open `/hooks` in Codex, review and trust the new definitions, then start a new task. The home page refreshes its live-session list every five seconds. `hooks/session-end.py` remains only as a legacy compatibility entry point.
+
+### Backfill completed local chats
+
+Preview completed turns stored under `$CODEX_HOME/sessions`, then synchronize them:
+
+```bash
+codex-memory-sync --server http://192.168.1.100:8000 --since 2026-07-01 --dry-run
+codex-memory-sync --server http://192.168.1.100:8000 --since 2026-07-01
+```
+
+Only turns with a `task_complete` event are imported. The backfill uses the same turn, tool-call, and event identifiers as the real-time hooks, so reruns and hook/backfill overlap are idempotent. Legacy rows without event identifiers use role/content occurrence matching as a compatibility fallback. Rollout JSONL remains a best-effort local import source; real-time hooks are the supported primary capture path.
 
 ## Project layout
 

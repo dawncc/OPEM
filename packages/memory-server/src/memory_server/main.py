@@ -12,12 +12,12 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession, selectinload
 
 from memory_common.config import get_settings
-from memory_common.schemas import ChatBatchCreate, ChatBatchResponse, HealthResponse, ObservationCreate, RecallRequest, RecallResponse, SubmitResponse
+from memory_common.schemas import ChatBatchCreate, ChatBatchResponse, HealthResponse, MemoryFeedbackCreate, MemoryFeedbackResponse, ObservationCreate, RecallRequest, RecallResponse, SubmitResponse
 
 from .db import Base, SessionLocal, engine, get_db
 from .conversation import build_chat_turns
 from .models import ChatMessage, DailySummary, Memory, MemorySource, Observation, ProcessingJob, Project, Session, ToolExecution
-from .services import create_chat_batch, create_observation, format_recall_context, recall
+from .services import create_chat_batch, create_memory_feedback, create_observation, format_recall_context, recall
 from .tracing import build_session_trace, format_duration
 
 
@@ -73,6 +73,19 @@ def chat_messages(payload: ChatBatchCreate, db: DbSession = Depends(get_db)) -> 
 def recall_api(payload: RecallRequest, db: DbSession = Depends(get_db)) -> RecallResponse:
     items = recall(db, payload.query, payload.project, payload.limit)
     return RecallResponse(items=items, context=format_recall_context(payload.query, items))
+
+
+@app.post("/api/v1/memories/feedback", response_model=MemoryFeedbackResponse, status_code=202)
+def memory_feedback(payload: MemoryFeedbackCreate, db: DbSession = Depends(get_db)) -> MemoryFeedbackResponse:
+    try:
+        item, memory, counts, duplicate = create_memory_feedback(db, payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return MemoryFeedbackResponse(
+        feedback_id=item.id, memory_id=memory.id, duplicate=duplicate,
+        helpful=counts.get("helpful", 0), irrelevant=counts.get("irrelevant", 0),
+        harmful=counts.get("harmful", 0), confidence=memory.confidence,
+    )
 
 
 @app.get("/", response_class=HTMLResponse)

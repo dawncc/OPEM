@@ -1,4 +1,4 @@
 interface:
   display_name: "Onevom"
-  short_description: "Recall memory and archive Codex tool outcomes"
-  default_prompt: "Recall relevant project memory, preserve the complete chat with timing metadata, and archive successful and failed tool outcomes with source context."
+  short_description: "Proactively recall and save durable project memory"
+  default_prompt: "Recall relevant project memory before substantial work, proactively save durable decisions and reusable learnings, and preserve the complete session with source context."
