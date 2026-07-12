@@ -11,7 +11,8 @@ import memory_worker.main as worker_module
 from memory_worker.main import build_daily_content, memory_type_for, rule_compress, similarity
 from datetime import date
 from types import SimpleNamespace
-from memory_server.conversation import build_chat_turns, classify_tool_status, split_message_content, tool_failed
+from memory_server.conversation import build_chat_turns, classify_tool_status, session_display_title, split_message_content, tool_failed
+from memory_server.daily_archive import render_daily_markdown
 from memory_server.db import Base
 from memory_server.main import templates
 from memory_server.models import Memory, Observation, ProcessingJob, ToolExecution
@@ -98,6 +99,36 @@ def test_daily_summary_groups_decisions_and_solutions():
     assert decisions == ["Use SQLite"]
     assert learnings == ["Run a Python worker"]
     assert unresolved == []
+
+
+def test_daily_markdown_archive_contains_projects_and_structured_work():
+    updated_at = datetime(2026, 7, 12, 9, 30, tzinfo=timezone.utc)
+    summary = SimpleNamespace(
+        project=SimpleNamespace(name="demo"), observation_count=3, memory_count=2,
+        updated_at=updated_at, content="Completed the export feature.",
+        decisions=["Use Markdown"], learnings=["Keep exports portable"],
+        unresolved=["Add cloud backup"],
+    )
+    markdown = render_daily_markdown(
+        date(2026, 7, 12), [summary], generated_at=updated_at,
+    )
+    assert markdown.startswith("# 2026-07-12 每日工作汇总")
+    assert "## demo" in markdown
+    assert "### 关键决策\n\n- Use Markdown" in markdown
+    assert "### 未解决事项\n\n- Add cloud backup" in markdown
+    assert "共 1 个项目，3 条工作记录，2 条长期记忆" in markdown
+
+
+def test_session_display_title_prefers_summary_then_user_message():
+    session = SimpleNamespace(
+        summary="  Finished the Markdown   archive. ", external_session_id="session-123",
+        chat_messages=[SimpleNamespace(role="user", content="Please build an archive")],
+    )
+    assert session_display_title(session) == "Finished the Markdown archive."
+    session.summary = None
+    assert session_display_title(session) == "Please build an archive"
+    session.chat_messages = [SimpleNamespace(role="assistant", content="Done")]
+    assert session_display_title(session) == "session-123"
 
 
 def test_chat_batch_preserves_roles_and_full_content():

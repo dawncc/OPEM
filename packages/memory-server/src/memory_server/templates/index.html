@@ -10,26 +10,26 @@
   <div class="actions"><a class="button" href="/calendar">查看日历</a><a class="button primary" href="/search">搜索记忆</a></div>
 </section>
 
+<section class="stats-grid" aria-label="数据概览">
+  {% for key,value in counts.items() %}<div class="stat-card"><span class="stat-dot"></span><span class="stat-label">{{ labels.get(key,key) }}</span><strong class="stat-value">{{ value }}</strong></div>{% endfor %}
+</section>
+
 <section class="section flush" id="live-activity">
   <div class="section-header">
     <h2 class="section-title">实时会话</h2>
     <span class="section-note"><span style="color:var(--green)">●</span> 每 5 秒自动更新</span>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>项目</th><th>Session</th><th>状态</th><th>消息</th><th>最后活动</th></tr></thead><tbody>
-    {% for s,p,last_activity,message_count in recent_sessions %}
+  <div class="table-wrap"><table><thead><tr><th>项目</th><th>会话内容</th><th>状态</th><th>消息</th><th>最后活动</th></tr></thead><tbody>
+    {% for s,p,last_activity,message_count,display_title in recent_sessions %}
     <tr>
       <td class="muted">{{ p.name }}</td>
-      <td><a class="table-title" href="/sessions/{{ s.id }}">{{ s.external_session_id }}</a></td>
+      <td><a class="table-title" href="/sessions/{{ s.id }}" title="{{ s.external_session_id }}">{{ display_title }}</a></td>
       <td><span class="badge" data-type="{{ s.status }}">{{ '记录中' if s.status == 'active' else '已完成' }}</span></td>
       <td class="muted">{{ message_count }}</td>
       <td class="muted nowrap">{{ (last_activity or s.started_at)|pretty_datetime }}</td>
     </tr>
     {% else %}<tr><td colspan="5"><div class="empty-state">等待 Codex 客户端提交第一条请求</div></td></tr>{% endfor %}
   </tbody></table></div>
-</section>
-
-<section class="stats-grid" aria-label="数据概览">
-  {% for key,value in counts.items() %}<div class="stat-card"><span class="stat-dot"></span><span class="stat-label">{{ labels.get(key,key) }}</span><strong class="stat-value">{{ value }}</strong></div>{% endfor %}
 </section>
 
 <div class="layout-two">

@@ -1,11 +1,23 @@
 import re
 from typing import Any, Iterable
 
-from .models import ChatMessage
+from .models import ChatMessage, Session
 
 FENCE_PATTERN = re.compile(r"```([\w.+#-]*)[^\S\r\n]*\r?\n(.*?)(?:```|\Z)", re.DOTALL)
 STRONG_TOOL_ERROR = re.compile(r"(?:^|\n)(?:FAILED|ERROR|FATAL|Traceback)\b|\b(?:AssertionError|TypeError|Exception):", re.IGNORECASE)
 ROLE_LABELS = {"user": "用户", "assistant": "Codex", "system": "系统", "tool": "工具"}
+
+
+def session_display_title(session: Session, max_length: int = 80) -> str:
+    """Return a human-readable session title for list pages."""
+    candidates = [session.summary]
+    candidates.extend(message.content for message in session.chat_messages if message.role == "user")
+    candidates.append(session.external_session_id)
+    for candidate in candidates:
+        text = " ".join((candidate or "").split())
+        if text:
+            return text if len(text) <= max_length else text[: max_length - 1].rstrip() + "…"
+    return "未命名会话"
 
 
 def split_message_content(content: str) -> list[dict[str, str]]:

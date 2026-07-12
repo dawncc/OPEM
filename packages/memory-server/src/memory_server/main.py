@@ -6,7 +6,7 @@ from uuid import UUID
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession, selectinload
@@ -15,7 +15,8 @@ from memory_common.config import get_settings
 from memory_common.schemas import ChatBatchCreate, ChatBatchResponse, HealthResponse, MemoryFeedbackCreate, MemoryFeedbackResponse, ObservationCreate, RecallRequest, RecallResponse, SubmitResponse
 
 from .db import Base, SessionLocal, engine, get_db
-from .conversation import build_chat_turns
+from .conversation import build_chat_turns, session_display_title
+from .daily_archive import render_daily_markdown
 from .models import ChatMessage, DailySummary, Memory, MemorySource, Observation, ProcessingJob, Project, Session, ToolExecution
 from .services import create_chat_batch, create_memory_feedback, create_observation, format_recall_context, recall
 from .tracing import build_session_trace, format_duration
@@ -103,12 +104,14 @@ def home(request: Request, db: DbSession = Depends(get_db)):
     memories = db.execute(select(Memory, Project).join(Project).order_by(Memory.updated_at.desc()).limit(15)).all()
     recent_sessions = db.execute(
         select(Session, Project, func.max(ChatMessage.created_at), func.count(ChatMessage.id))
+        .options(selectinload(Session.chat_messages))
         .join(Project, Session.project_id == Project.id)
         .outerjoin(ChatMessage, ChatMessage.session_id == Session.id)
         .group_by(Session.id, Project.id)
         .order_by(func.coalesce(func.max(ChatMessage.created_at), Session.started_at).desc())
         .limit(12)
     ).all()
+    recent_sessions = [(*row, session_display_title(row[0])) for row in recent_sessions]
     return templates.TemplateResponse(request, "index.html", {
         "counts": counts, "projects": projects, "observations": observations,
         "memories": memories, "recent_sessions": recent_sessions,
@@ -226,6 +229,32 @@ def calendar_page(request: Request, year: int | None = None, month: int | None =
 def daily_page(request: Request, summary_date: date, db: DbSession = Depends(get_db)):
     summaries = db.scalars(select(DailySummary).where(DailySummary.summary_date == summary_date).options(selectinload(DailySummary.project))).all()
     return templates.TemplateResponse(request, "daily.html", {"summary_date": summary_date, "summaries": summaries})
+
+
+@app.get("/calendar/{summary_date}/export.md")
+def export_daily_markdown(
+    summary_date: date,
+    project_id: UUID | None = None,
+    db: DbSession = Depends(get_db),
+):
+    stmt = (
+        select(DailySummary)
+        .where(DailySummary.summary_date == summary_date)
+        .options(selectinload(DailySummary.project))
+    )
+    if project_id is not None:
+        stmt = stmt.where(DailySummary.project_id == project_id)
+    summaries = db.scalars(stmt).all()
+    if project_id is not None and not summaries:
+        raise HTTPException(404, "Daily summary not found")
+    filename = f"daily-work-summary-{summary_date.isoformat()}"
+    if project_id is not None:
+        filename += f"-{project_id}"
+    return Response(
+        render_daily_markdown(summary_date, summaries),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.md"'},
+    )
 
 
 def run() -> None:
