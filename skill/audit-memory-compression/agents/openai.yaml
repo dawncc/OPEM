@@ -1,0 +1,4 @@
+interface:
+  display_name: "Memory Compression Audit"
+  short_description: "Audit multi-turn compression prompt and rules"
+  default_prompt: "Use $audit-memory-compression to trace multi-turn compression and evaluate prompt and rule construction."

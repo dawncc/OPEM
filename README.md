@@ -23,56 +23,11 @@ OPEM, short for **One Personal Evolving Memory System**, aggregates conversation
 - **Daily summaries** — browse decisions, learnings, unresolved problems, and Memory highlights on a calendar.
 - **Small deployment footprint** — FastAPI, SQLAlchemy, one Worker, server-rendered pages, and SQLite or PostgreSQL/pgvector.
 
-## Screenshots
-
-### Session execution trace
-
-Request paths connect user messages, Codex responses, and tool calls. Test, shell, file, search, browser, network/MCP, database, and code tools use distinct styles.
-
-![Session execution trace](docs/images/session-trace.png)
-
-### Tool execution archive
-
-Every tool result is archived. Clear successes enter the Memory pipeline, failures enter the FAQ pipeline, and unknown outcomes remain raw-only.
-
-![Tool execution archive](docs/images/tool-archive.png)
-
-### Failure FAQ
-
-Failures retain the observed evidence, normalized category, remediation suggestion, stable signature, and a link to the source Session.
-
-![Failure FAQ](docs/images/failure-faq.png)
-
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph Clients[Codex machines]
-        Codex[Codex CLI / Desktop / Remote]
-        Skill[Memory Skill]
-        MCP[Python stdio MCP bridge]
-        Queue[Local pending JSONL]
-        Codex --> Skill --> MCP
-        MCP --> Queue
-    end
+![OPEM architecture](docs/images/architecture.svg)
 
-    MCP -->|LAN HTTP| API
-
-    subgraph Server[Shared Memory Server]
-        API[FastAPI]
-        DB[(SQLite or PostgreSQL + pgvector)]
-        Worker[Memory Worker]
-        Memory[Consolidated Memory]
-        UI[Jinja2 Web UI]
-        API --> DB
-        DB --> Worker --> Memory
-        DB --> UI
-        Memory --> UI
-    end
-
-    Memory -->|hybrid recall| API
-    API -->|chat-memory context| MCP
-```
+The editable Mermaid source is available at [`docs/architecture.mmd`](docs/architecture.mmd).
 
 The server keeps raw `ChatMessage` and `Observation` records independent from generated `Memory`. Every generated Memory retains source Observation and Session links.
 

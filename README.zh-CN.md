@@ -23,56 +23,11 @@ OPEM 是 **One Personal Evolving Memory System** 的缩写。它归个人所有�
 - **每日记忆日历**：按天查看决策、经验、未解决问题和 Memory 摘要。
 - **部署组件少**：FastAPI、SQLAlchemy、单个 Worker、服务端页面，以及 SQLite 或 PostgreSQL/pgvector。
 
-## 系统截图
-
-### Session 执行链路
-
-每条路径连接用户请求、Codex 响应和工具调用。测试、命令行、文件、搜索、浏览器、网络/MCP、数据库和代码执行采用不同样式。
-
-![Session 执行链路](docs/images/session-trace.png)
-
-### 工具执行归档
-
-所有工具结果都会保存。明确成功的结果进入 Memory 流程，失败结果进入 FAQ 流程，状态未知的结果只保留原始归档。
-
-![工具执行归档](docs/images/tool-archive.png)
-
-### 失败 FAQ
-
-FAQ 保留已观察到的证据、标准化错误分类、处理建议、稳定失败签名，以及原始 Session 跳转。
-
-![失败 FAQ](docs/images/failure-faq.png)
-
 ## 系统架构
 
-```mermaid
-flowchart LR
-    subgraph Clients[Codex 客户端机器]
-        Codex[Codex CLI / Desktop / Remote]
-        Skill[Memory Skill]
-        MCP[Python stdio MCP 桥接]
-        Queue[本地 pending JSONL]
-        Codex --> Skill --> MCP
-        MCP --> Queue
-    end
+![OPEM 系统架构](docs/images/architecture.svg)
 
-    MCP -->|局域网 HTTP| API
-
-    subgraph Server[统一 Memory 服务器]
-        API[FastAPI]
-        DB[(SQLite 或 PostgreSQL + pgvector)]
-        Worker[Memory Worker]
-        Memory[归并后的长期 Memory]
-        UI[Jinja2 网页]
-        API --> DB
-        DB --> Worker --> Memory
-        DB --> UI
-        Memory --> UI
-    end
-
-    Memory -->|混合召回| API
-    API -->|chat-memory 上下文| MCP
-```
+可编辑的 Mermaid 源文件位于 [`docs/architecture.mmd`](docs/architecture.mmd)。
 
 服务端将原始 `ChatMessage`、`Observation` 与生成后的 `Memory` 分开保存。每条 Memory 都保留来源 Observation 和 Session，可以完整追溯。
 

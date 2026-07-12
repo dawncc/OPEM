@@ -30,27 +30,6 @@ const flow = [
   ["Recall", "混合检索返回可验证的历史上下文"],
 ];
 
-const screenshots = [
-  {
-    src: "/screenshots/session-trace.png",
-    alt: "OPEM Session Trace 页面",
-    title: "请求级执行链路",
-    copy: "一眼识别每轮请求中的 Codex、测试、命令行、文件和网络调用。",
-  },
-  {
-    src: "/screenshots/tool-archive.png",
-    alt: "OPEM 工具归档页面",
-    title: "工具结果完整归档",
-    copy: "成功、失败与待确认状态分开呈现，原始输出始终可追溯。",
-  },
-  {
-    src: "/screenshots/failure-faq.png",
-    alt: "OPEM 失败 FAQ 页面",
-    title: "失败自动转化为 FAQ",
-    copy: "保留真实证据，给出分类和处理方向，不把推测写成事实。",
-  },
-];
-
 export default function Home() {
   return (
     <main>
@@ -111,8 +90,8 @@ export default function Home() {
       </section>
 
       <section className="section screenshot-section" id="screens">
-        <div className="section-heading"><div><p className="eyebrow">Real product screens</p><h2>从完整历史，<br />走到执行细节。</h2></div><p>页面由统一 Memory Server 渲染，适合在局域网内快速查询项目、Session、Memory、Trace 和工具知识。</p></div>
-        <div className="screenshot-grid">{screenshots.map((item, index) => <figure className={index === 0 ? "wide" : ""} key={item.src}><div className="screenshot-frame"><Image src={item.src} alt={item.alt} width={1265} height={712} /></div><figcaption><span>0{index + 1}</span><div><strong>{item.title}</strong><p>{item.copy}</p></div></figcaption></figure>)}</div>
+        <div className="section-heading"><div><p className="eyebrow">Real product screen</p><h2>所有记忆，<br />一个入口。</h2></div><p>主页面集中展示项目、Session、Memory 与最近活动。需要深入时，再进入搜索、Trace、工具归档和 FAQ。</p></div>
+        <figure className="overview-shot"><div className="screenshot-frame"><Image src="/screenshots/overview.png" alt="OPEM 系统概览主页面" width={1265} height={712} /></div><figcaption><span>01</span><div><strong>Memory Server Overview</strong><p>从一个页面掌握跨项目记忆状态、活动趋势和最近沉淀的长期知识。</p></div></figcaption></figure>
       </section>
 
       <section className="section deploy-section" id="deploy">

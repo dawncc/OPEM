@@ -1,0 +1,80 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Arial, Microsoft YaHei, sans-serif",
+    "primaryColor": "#F4F7FF",
+    "primaryTextColor": "#17213A",
+    "primaryBorderColor": "#A9B9E8",
+    "lineColor": "#7183B7",
+    "secondaryColor": "#F8F6FF",
+    "tertiaryColor": "#F3FBF8",
+    "clusterBkg": "#FAFBFF",
+    "clusterBorder": "#D9E0F2",
+    "edgeLabelBackground": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "htmlLabels": false,
+    "nodeSpacing": 34,
+    "rankSpacing": 55,
+    "padding": 18
+  }
+}}%%
+flowchart TB
+    subgraph CLIENTS["01 · CLIENTS"]
+        direction LR
+        CODEX["Codex "]
+        CAPTURE["Hooks + Skill "]
+        BRIDGE["MCP Bridge "]
+        QUEUE[("Offline Queue ")]
+
+        CODEX --> CAPTURE --> BRIDGE
+        BRIDGE -. "offline" .-> QUEUE
+        QUEUE -. "retry" .-> BRIDGE
+    end
+
+    subgraph SERVER["02 · MEMORY SERVER"]
+        direction LR
+        API["FastAPI "]
+        RAW[("Evidence ")]
+        WORKER["Memory Worker "]
+        MEMORY[("Durable Memory ")]
+        RECALL["Hybrid Recall "]
+
+        API -->|"append"| RAW
+        RAW -->|"jobs"| WORKER
+        WORKER -->|"derive"| MEMORY
+        MEMORY --> RECALL
+        RAW -. "provenance" .-> MEMORY
+    end
+
+    subgraph EXPERIENCE["03 · EXPERIENCE"]
+        direction LR
+        UI["Web Console "]
+        TRACE["Trace + Archive "]
+        CONTEXT["Verified Context "]
+
+        UI --> TRACE
+        TRACE ~~~ CONTEXT
+    end
+
+    BRIDGE ==>|"trusted LAN"| API
+    RECALL ==>|"ranked context"| CONTEXT
+    RAW -. "inspect" .-> TRACE
+    MEMORY -. "browse" .-> UI
+
+    classDef client fill:#EEF4FF,stroke:#7EA2EB,color:#17213A,stroke-width:1.5px;
+    classDef ingest fill:#F2EEFF,stroke:#9B83E8,color:#211A42,stroke-width:1.5px;
+    classDef store fill:#EFFAF6,stroke:#60B894,color:#153B2D,stroke-width:1.5px;
+    classDef process fill:#FFF6E9,stroke:#E1A955,color:#4A3211,stroke-width:1.5px;
+    classDef view fill:#F8F9FC,stroke:#A8B0C4,color:#252B3A,stroke-width:1.5px;
+
+    class CODEX,CAPTURE client;
+    class BRIDGE,API ingest;
+    class QUEUE,RAW,MEMORY store;
+    class WORKER,RECALL process;
+    class UI,TRACE,CONTEXT view;
+
+    style CLIENTS fill:#FAFCFF,stroke:#C8D6F2,stroke-width:1px,color:#53648B
+    style SERVER fill:#FCFBFF,stroke:#D6CDF2,stroke-width:1px,color:#66568B
+    style EXPERIENCE fill:#FBFCFD,stroke:#D9DEE9,stroke-width:1px,color:#687087
