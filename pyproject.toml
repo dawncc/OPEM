@@ -1,7 +1,11 @@
 [project]
 name = "codex-lan-memory"
 version = "0.1.0"
+license = "MIT"
 requires-python = ">=3.12"
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+]
 dependencies = [
   "alembic>=1.13",
   "fastapi>=0.115",
@@ -44,4 +48,3 @@ pythonpath = [
   "packages/memory-mcp/src",
 ]
 testpaths = ["tests"]
-
