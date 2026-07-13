@@ -23,10 +23,10 @@
 flowchart TB
     subgraph CLIENTS["01 · CLIENTS"]
         direction LR
-        CODEX["Codex "]
-        CAPTURE["Hooks + Skill "]
-        BRIDGE["MCP Bridge "]
-        QUEUE[("Offline Queue ")]
+        CODEX["Codex."]
+        CAPTURE["Hooks + Skill."]
+        BRIDGE["MCP Bridge."]
+        QUEUE[("Offline Queue.")]
 
         CODEX --> CAPTURE --> BRIDGE
         BRIDGE -. "offline" .-> QUEUE
@@ -35,11 +35,11 @@ flowchart TB
 
     subgraph SERVER["02 · MEMORY SERVER"]
         direction LR
-        API["FastAPI "]
-        RAW[("Evidence ")]
-        WORKER["Memory Worker "]
-        MEMORY[("Durable Memory ")]
-        RECALL["Hybrid Recall "]
+        API["FastAPI."]
+        RAW[("Evidence.")]
+        WORKER["Memory Worker."]
+        MEMORY[("Durable Memory.")]
+        RECALL["Hybrid Recall."]
 
         API -->|"append"| RAW
         RAW -->|"jobs"| WORKER
@@ -50,9 +50,9 @@ flowchart TB
 
     subgraph EXPERIENCE["03 · EXPERIENCE"]
         direction LR
-        UI["Web Console "]
-        TRACE["Trace + Archive "]
-        CONTEXT["Verified Context "]
+        UI["Web Console."]
+        TRACE["Trace + Archive."]
+        CONTEXT["Verified Context."]
 
         UI --> TRACE
         TRACE ~~~ CONTEXT
