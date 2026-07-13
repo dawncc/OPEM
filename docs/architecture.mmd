@@ -40,12 +40,16 @@ flowchart TB
         WORKER["Memory Worker."]
         MEMORY[("Durable Memory.")]
         RECALL["Hybrid Recall."]
+        EVAL["Task Evidence + Path Scoring."]
+        POLICY["Versioned Route Policy."]
 
         API -->|"append"| RAW
         RAW -->|"jobs"| WORKER
         WORKER -->|"derive"| MEMORY
         MEMORY --> RECALL
         RAW -. "provenance" .-> MEMORY
+        RAW -->|"derive TaskRun"| EVAL
+        EVAL -->|"shadow gates"| POLICY
     end
 
     subgraph EXPERIENCE["03 · EXPERIENCE"]
@@ -60,6 +64,7 @@ flowchart TB
 
     BRIDGE ==>|"trusted LAN"| API
     RECALL ==>|"ranked context"| CONTEXT
+    POLICY -.>|"observe / advise"| CONTEXT
     RAW -. "inspect" .-> TRACE
     MEMORY -. "browse" .-> UI
 
@@ -72,7 +77,7 @@ flowchart TB
     class CODEX,CAPTURE client;
     class BRIDGE,API ingest;
     class QUEUE,RAW,MEMORY store;
-    class WORKER,RECALL process;
+    class WORKER,RECALL,EVAL,POLICY process;
     class UI,TRACE,CONTEXT view;
 
     style CLIENTS fill:#FAFCFF,stroke:#C8D6F2,stroke-width:1px,color:#53648B

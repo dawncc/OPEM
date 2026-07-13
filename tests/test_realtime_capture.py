@@ -61,7 +61,7 @@ def test_hook_maps_request_tool_and_stop_to_immediate_deliveries(tmp_path, monke
     deliveries = []
     monkeypatch.setattr(capture, "deliver", lambda server, endpoint, payload: deliveries.append((server, endpoint, payload)))
 
-    common = {"session_id": "session-1", "turn_id": "turn-1", "cwd": str(tmp_path / "project")}
+    common = {"session_id": "session-1", "turn_id": "turn-1", "cwd": str(tmp_path / "project"), "model": "gpt-test", "reasoning_effort": "high"}
     capture.handle({**common, "hook_event_name": "UserPromptSubmit", "prompt": "please fix it"})
     capture.handle({
         **common, "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_use_id": "tool-1",
@@ -74,6 +74,8 @@ def test_hook_maps_request_tool_and_stop_to_immediate_deliveries(tmp_path, monke
         "/api/v1/chat/messages", "/api/v1/observations",
     ]
     assert deliveries[0][2]["messages"][0]["event_id"] == "turn:turn-1:user"
+    assert deliveries[0][2]["messages"][0]["metadata"]["model"] == "gpt-test"
+    assert deliveries[0][2]["messages"][0]["metadata"]["reasoning_effort"] == "high"
     assert deliveries[1][2]["messages"][0]["metadata"]["status"] == "failed"
     assert deliveries[2][2]["session_status"] == "completed"
     assert deliveries[3][2]["idempotency_key"]
@@ -167,7 +169,7 @@ def test_history_import_and_live_hook_share_event_ids_without_duplicates(tmp_pat
     rollout = tmp_path / "rollout-2026-07-12T00-00-00-session-history.jsonl"
     records = [
         {"timestamp": "2026-07-12T00:00:00Z", "type": "session_meta", "payload": {"id": "session-history", "cwd": str(tmp_path / "demo")}},
-        {"timestamp": "2026-07-12T00:00:01Z", "type": "turn_context", "payload": {"turn_id": "turn-1", "cwd": str(tmp_path / "demo")}},
+        {"timestamp": "2026-07-12T00:00:01Z", "type": "turn_context", "payload": {"turn_id": "turn-1", "cwd": str(tmp_path / "demo"), "model": "gpt-test", "reasoning_effort": "high"}},
         {"timestamp": "2026-07-12T00:00:02Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fix tests"}], "internal_chat_message_metadata_passthrough": {"turn_id": "turn-1"}}},
         {"timestamp": "2026-07-12T00:00:03Z", "type": "response_item", "payload": {"type": "function_call", "id": "fc-1", "call_id": "call-1", "name": "shell", "arguments": "pytest", "internal_chat_message_metadata_passthrough": {"turn_id": "turn-1"}}},
         {"timestamp": "2026-07-12T00:00:04Z", "type": "response_item", "payload": {"type": "function_call_output", "call_id": "call-1", "output": {"exit_code": 0, "output": "2 passed"}, "internal_chat_message_metadata_passthrough": {"turn_id": "turn-1"}}},
@@ -180,6 +182,8 @@ def test_history_import_and_live_hook_share_event_ids_without_duplicates(tmp_pat
     assert [item["event_id"] for item in parsed.messages] == [
         "turn:turn-1:user", "tool:call-1", "turn:turn-1:assistant",
     ]
+    assert all(item["metadata"]["model"] == "gpt-test" for item in parsed.messages)
+    assert all(item["metadata"]["reasoning_effort"] == "high" for item in parsed.messages)
 
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

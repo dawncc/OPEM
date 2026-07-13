@@ -239,6 +239,23 @@ def infer_tool_status(response: Any) -> str:
     return "completed"
 
 
+def runtime_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    """Copy optional host fields without requiring a particular Codex version."""
+    result: dict[str, Any] = {}
+    nested = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    context = payload.get("turn_context") if isinstance(payload.get("turn_context"), dict) else {}
+    for key in (
+        "model", "model_name", "reasoning_effort", "usage", "agent_id",
+        "subagent_id", "parent_agent_id", "parent_id", "branch_id",
+        "policy_version", "strategy_version", "route_arm", "strategy_arm",
+        "assignment_id", "assignment_probability",
+    ):
+        value = payload.get(key, nested.get(key, context.get(key)))
+        if value not in (None, ""):
+            result[key] = value
+    return result
+
+
 def chat_payload(payload: dict[str, Any], config: dict[str, Any], message: dict[str, Any], *, status: str | None = None, summary: str | None = None) -> dict[str, Any]:
     result = {
         "project": project_name(payload, config),
@@ -259,7 +276,10 @@ def handle(payload: dict[str, Any]) -> bool:
     event = str(payload.get("hook_event_name") or "")
     session_id = str(payload.get("session_id") or payload.get("thread_id") or "unknown")
     turn_id = str(payload.get("turn_id") or "unknown")
-    common_metadata = {"capture": "codex-hook", "hook_event": event, "turn_id": turn_id}
+    common_metadata = {
+        "capture": "codex-hook", "hook_event": event, "turn_id": turn_id,
+        **runtime_metadata(payload),
+    }
 
     if event == "UserPromptSubmit" and payload.get("prompt"):
         message = {
@@ -280,7 +300,7 @@ def handle(payload: dict[str, Any]) -> bool:
             "tool_input": compact_json(payload.get("tool_input", {})),
         }
         if isinstance(tool_response, dict):
-            for key in ("exit_code", "exitCode", "duration_ms", "elapsed_ms"):
+            for key in ("exit_code", "exitCode", "duration_ms", "elapsed_ms", "usage", "model", "model_name"):
                 if key in tool_response:
                     metadata[key] = tool_response[key]
         message = {
@@ -297,6 +317,8 @@ def handle(payload: dict[str, Any]) -> bool:
             "role": "assistant", "content": assistant,
             "event_id": f"turn:{turn_id}:assistant", "metadata": common_metadata,
         }
+        if payload.get("duration_ms") is not None:
+            message["duration_ms"] = payload["duration_ms"]
         deliver(server, "/api/v1/chat/messages", chat_payload(payload, config, message, status="completed", summary=assistant))
         observation = {
             "content": assistant,

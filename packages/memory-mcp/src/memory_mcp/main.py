@@ -46,6 +46,20 @@ def submit(payload: dict) -> dict:
         return {"status": "queued_locally", "error": str(exc), "idempotency_key": payload["idempotency_key"]}
 
 
+def post_or_queue(endpoint: str, payload: dict) -> dict:
+    """Preserve write-only evolution evidence while the LAN server is offline."""
+    try:
+        flushed = flush_pending()
+        response = httpx.post(f"{SERVER_URL}{endpoint}", json=payload, timeout=10)
+        response.raise_for_status()
+        result = response.json()
+        result["flushed_pending"] = flushed
+        return result
+    except Exception as exc:
+        append_pending({"_queue_endpoint": endpoint, **payload})
+        return {"status": "queued_locally", "error": str(exc)}
+
+
 @mcp.tool()
 def memory_submit(
     content: str,
@@ -61,10 +75,22 @@ def memory_submit(
 
 
 @mcp.tool()
-def memory_recall(query: str, project: str | None = None, limit: int = 8) -> dict:
+def memory_recall(
+    query: str,
+    project: str | None = None,
+    limit: int = 8,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+    policy_version: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict:
     """Recall durable memories. Use the returned chat-memory context as historical context, verify it, then continue the current task."""
     flush_pending()
-    response = httpx.post(f"{SERVER_URL}/api/v1/recall", json={"query": query, "project": project, "limit": limit}, timeout=15)
+    response = httpx.post(f"{SERVER_URL}/api/v1/recall", json={
+        "query": query, "project": project, "limit": limit,
+        "session_id": session_id, "turn_id": turn_id,
+        "policy_version": policy_version, "idempotency_key": idempotency_key,
+    }, timeout=15)
     response.raise_for_status()
     return response.json()
 
@@ -86,6 +112,75 @@ def memory_feedback(
     response = httpx.post(f"{SERVER_URL}/api/v1/memories/feedback", json=payload, timeout=10)
     response.raise_for_status()
     return response.json()
+
+
+@mcp.tool()
+def memory_task_outcome(
+    project: str,
+    session_id: str,
+    turn_id: str,
+    evidence_type: str,
+    value: float,
+    metric: str = "task_success",
+    confidence: float = 1.0,
+    strength: Literal["strong", "medium", "weak"] = "strong",
+    source_type: str = "agent_report",
+    source_ref: str | None = None,
+    rationale: str | None = None,
+    independence_group: str = "explicit_outcome",
+    idempotency_key: str | None = None,
+) -> dict:
+    """Report evidence-backed task outcomes; absence of a report is never treated as success."""
+    return post_or_queue("/api/v1/tasks/outcomes", {
+        "project": project, "session_id": session_id, "turn_id": turn_id,
+        "evidence_type": evidence_type, "metric": metric, "value": value,
+        "confidence": confidence, "strength": strength, "source_type": source_type,
+        "source_ref": source_ref, "rationale": rationale,
+        "independence_group": independence_group, "idempotency_key": idempotency_key,
+    })
+
+
+@mcp.tool()
+def memory_route_recommend(
+    project: str,
+    task: str,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+    task_kind: str | None = None,
+    risk_level: Literal["unknown", "low", "medium", "high"] = "unknown",
+    available_model_levels: list[str] | None = None,
+    current_model: str | None = None,
+) -> dict:
+    """Return a versioned execution-route recommendation; observe/shadow modes must not change execution."""
+    response = httpx.post(f"{SERVER_URL}/api/v1/routes/recommend", json={
+        "project": project, "task": task, "session_id": session_id, "turn_id": turn_id,
+        "task_kind": task_kind, "risk_level": risk_level,
+        "available_model_levels": available_model_levels or [], "current_model": current_model,
+    }, timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+@mcp.tool()
+def memory_path_intervention(
+    project: str,
+    session_id: str,
+    turn_id: str,
+    path_key: str,
+    method: Literal["paired_replay", "randomized"],
+    full_quality: float,
+    counterfactual_quality: float,
+    confidence: float = 1.0,
+    idempotency_key: str | None = None,
+    rationale: str | None = None,
+) -> dict:
+    """Record a controlled path ablation; use only for paired replay or randomized evidence."""
+    return post_or_queue("/api/v1/paths/interventions", {
+        "project": project, "session_id": session_id, "turn_id": turn_id,
+        "path_key": path_key, "method": method,
+        "full_quality": full_quality, "counterfactual_quality": counterfactual_quality,
+        "confidence": confidence, "idempotency_key": idempotency_key, "rationale": rationale,
+    })
 
 
 @mcp.tool()

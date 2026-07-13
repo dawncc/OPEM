@@ -15,10 +15,11 @@ OPEM 是 **One Personal Evolving Memory System** 的缩写。它归个人所有�
 ## 核心能力
 
 - **跨机器汇总**：多台 Codex CLI、Desktop 或 Remote 主机共同写入一台 Memory Server。
-- **以 MCP 为核心**：通过五个 MCP 工具完成提交、召回、会话结束、完整聊天归档和健康检查。
+- **以 MCP 为核心**：支持提交、召回、验证结果回传、路径建议、受控消融、完整聊天归档和健康检查。
 - **原始历史与长期记忆分离**：完整聊天长期保留，可复用知识单独压缩为 Memory。
 - **混合召回**：融合精确短语、BM25、模糊匹配、元数据和可选向量相似度，并通过加权 RRF 排序、MMR 去重。
 - **Session Trace**：按用户请求拆分执行路径，展示 Codex 与工具节点，以及精确或估算耗时。
+- **工具调用聚合**：从输入/输出提取语言与关键词画像，以可解释近似度聚合功能相似的工具，并支持多条件过滤和原始执行追溯。
 - **工具归档与 FAQ**：成功工具可成为召回上下文；失败工具自动生成带证据的 FAQ。
 - **每日记忆日历**：按天查看决策、经验、未解决问题和 Memory 摘要。
 - **部署组件少**：FastAPI、SQLAlchemy、单个 Worker、服务端页面，以及 SQLite 或 PostgreSQL/pgvector。
@@ -135,6 +136,10 @@ startup_timeout_sec = 30
 | --- | --- |
 | `memory_submit` | 保存观察、决策、经验、问题、解决方案或会话总结。 |
 | `memory_recall` | 返回结构化结果和可直接注入上下文的 `<chat-memory>` 文本块。 |
+| `memory_feedback` | 回传 Memory 对已验证结果的帮助、无关或有害证据。 |
+| `memory_task_outcome` | 回传有证据的任务结果，不把沉默当作成功。 |
+| `memory_route_recommend` | 返回版本化的 observe、shadow、canary 或 active 路径建议。 |
+| `memory_path_intervention` | 记录配对回放或随机消融得到的路径必要性证据。 |
 | `memory_session_end` | 提交完成事项、决策、未解决问题和相关文件。 |
 | `memory_chat_submit` | 保存完整、按时间排序的 user/assistant/system/tool 聊天记录。 |
 | `memory_health` | 检查服务端和数据库，并补传本地 pending 队列。 |
@@ -148,6 +153,11 @@ MVP 只保留少量核心业务接口：
 | `POST` | `/api/v1/observations` | 接收长期观察与 Session 总结。 |
 | `POST` | `/api/v1/chat/messages` | 接收完整聊天批次与工具元数据。 |
 | `POST` | `/api/v1/recall` | 执行混合 Memory 召回。 |
+| `POST` | `/api/v1/memories/feedback` | 写入可审计的召回反馈。 |
+| `POST` | `/api/v1/tasks/outcomes` | 为 TaskRun 写入强、中、弱三级结果证据。 |
+| `POST` | `/api/v1/routes/recommend` | 分配版本化执行策略；observe/shadow 不改变真实执行。 |
+| `POST` | `/api/v1/paths/interventions` | 写入受控路径消融的因果证据。 |
+| `GET` | `/api/v1/evolution/report` | 按任务桶对比质量、失败、成本和延迟。 |
 | `GET` | `/api/v1/health` | 检查数据库和待处理任务。 |
 
 主要网页路由：
@@ -156,6 +166,7 @@ MVP 只保留少量核心业务接口：
 - `/search`：Memory 搜索
 - `/calendar`：每日记忆日历
 - `/traces`：Session 请求路径与耗时
+- `/evolution`：TaskRun、证据、路径分数和策略门禁
 - `/tools`：工具执行归档
 - `/faq`：失败工具 FAQ
 - `/sessions/<id>`：完整聊天记录
@@ -198,6 +209,10 @@ ssh -N -R 18000:127.0.0.1:8000 <remote-host>
 | `MEMORY_EMBEDDING_ENABLED` | `false` | 是否启用本地 embedding。 |
 | `MEMORY_EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | sentence-transformers 模型。 |
 | `MEMORY_RECALL_CANDIDATE_LIMIT` | `0` | `0` 表示搜索全部 Memory；数据量大时应设置候选上限。 |
+| `MEMORY_MODEL_PRICES_JSON` | `{}` | 可选模型价格覆盖，依次为输入、缓存输入和输出百万 token 单价。 |
+| `MEMORY_STRATEGY_CANARY_ENABLED` | `false` | 证据门禁通过后是否允许低风险 Canary。 |
+| `MEMORY_STRATEGY_MIN_SHADOW_CASES` | `20` | 生成 Shadow 候选所需的强证据任务数。 |
+| `MEMORY_STRATEGY_MIN_CANARY_CASES` | `50` | 允许 Canary 所需的强证据任务数。 |
 | `MEMORY_DAILY_REFRESH_SECONDS` | `60` | 每日总结刷新间隔。 |
 | `MEMORY_TIMEZONE` | `Asia/Shanghai` | 每日总结使用的时区。 |
 
@@ -216,7 +231,7 @@ python scripts/install_codex_hooks.py --server http://192.168.1.100:8000
 - `Stop`：每轮请求结束时保存 Codex 完整回复、更新 Session 摘要，并创建可压缩的 Observation。
 - `PreCompact`：压缩上下文前写入兜底检查点。
 
-Hook 仅使用 Python 标准库。服务端不可用时写入 `$CODEX_HOME/codex-memory/pending.jsonl`，下一次事件触发时自动补传。安装后在 Codex 中执行 `/hooks`，审核并信任新增定义，然后新建一个任务。首页每 5 秒自动刷新“实时会话”，原始聊天提交成功后立即可见；Memory 由 Worker 随后异步生成。
+Hook 仅使用 Python 标准库。事件会先原子写入 `$CODEX_HOME/codex-memory/pending.d/`，提交成功后再删除，下一次事件触发时自动补传；旧版 `pending.jsonl` 会自动迁移。最近一次 Hook 状态和错误分别保存在 `capture-status.json`、`capture-error.json`。安装后在 Codex 中执行 `/hooks`，审核并信任新增定义，然后新建一个任务。首页每 5 秒自动刷新“实时会话”，原始聊天提交成功后立即可见；Memory 由 Worker 随后异步生成。
 
 `hooks/session-end.py` 仅为旧配置兼容入口，新部署应使用 `hooks/capture.py`。
 
@@ -244,6 +259,11 @@ python scripts/sync_codex_history.py --server http://127.0.0.1:8000 --since 2026
 
 历史 rollout JSONL 是 Codex 的本地会话文件，而不是稳定的 Hook 协议；解析器采用容错读取，无法识别的行会跳过。建议保留实时 Hook 作为日常同步方式，只把历史同步器用于补录。
 
+## 设计说明
+
+- [多轮任务的成本控制与上下文压缩](docs/context-cost-compression.md)
+- [零样本执行路径自演进](docs/execution-path-evolution.md)
+
 ## 工程结构
 
 ```text
@@ -267,7 +287,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-当前测试覆盖聊天完整保存、中英文召回、项目隔离、本地 pending 重试、工具状态分类、FAQ 构造、Worker 归并边界、Trace 耗时和 HTML 转义。
+当前测试覆盖聊天完整保存、中英文召回、项目隔离、本地 pending 重试、工具状态分类、TaskRun/DAG 派生、证据聚合、因果路径保护、策略门禁、FAQ 构造、Worker 归并边界、Trace 耗时和 HTML 转义。
 
 ## 安全边界
 

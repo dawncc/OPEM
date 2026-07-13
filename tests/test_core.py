@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from memory_common.schemas import ChatBatchCreate, ChatMessageCreate, ObservationCreate, ObservationKind, RecallRequest
 import memory_worker.main as worker_module
+import memory_server.tool_grouping as tool_grouping_module
 from memory_worker.main import build_daily_content, memory_type_for, rule_compress, similarity
 from datetime import date
 from types import SimpleNamespace
@@ -17,7 +18,8 @@ from memory_server.daily_archive import render_daily_markdown
 from memory_server.db import Base
 from memory_server.main import templates
 from memory_server.models import Memory, Observation, ProcessingJob, ToolExecution
-from memory_server.tool_archive import error_category, extract_failure_reason, failure_signature
+from memory_server.tool_archive import backfill_tool_profiles, error_category, extract_failure_reason, failure_signature, stringify_input
+from memory_server.tool_grouping import TOOL_PROFILE_CACHE_KEY, execution_input, filter_tool_profiles, group_tool_executions, metadata_with_tool_profile, normalize_tool_input, profile_tool_execution, summarize_tool_groups, tool_group_facets, tool_operation
 from memory_server.tracing import build_session_trace, classify_tool_kind, explicit_duration_ms, format_duration
 from memory_server.costing import estimate_request_cost, format_usd
 from memory_common.pending import append_pending, drain_pending, pending_path
@@ -260,6 +262,7 @@ def test_chat_tools_are_archived_and_only_known_outcomes_create_memories():
         assert set(archives) == {"success", "failed", "unknown"}
         assert archives["success"].output_text == "3 passed in 0.42s"
         assert archives["success"].metadata_["duration_ms"] == 420
+        assert archives["success"].metadata_[TOOL_PROFILE_CACHE_KEY]["family"] == "testing"
         assert archives["success"].observation.kind == "learning"
         assert "tool-success" in archives["success"].observation.concepts
         assert archives["failed"].observation.kind == "problem"
@@ -268,12 +271,83 @@ def test_chat_tools_are_archived_and_only_known_outcomes_create_memories():
         assert archives["failed"].failure_signature
         assert archives["unknown"].observation_id is None
         assert db.scalar(select(func.count()).select_from(Observation)) == 2
+
+        uncached_metadata = dict(archives["success"].metadata_)
+        uncached_metadata.pop(TOOL_PROFILE_CACHE_KEY)
+        archives["success"].metadata_ = uncached_metadata
+        db.flush()
+        assert backfill_tool_profiles(db) == 1
+        assert archives["success"].metadata_[TOOL_PROFILE_CACHE_KEY]["version"] == "v2"
         assert db.scalar(select(func.count()).select_from(ProcessingJob)) == 2
 
         _, accepted, duplicates = create_chat_batch(db, payload)
         assert (accepted, duplicates) == (0, 3)
         assert db.scalar(select(func.count()).select_from(ToolExecution)) == 3
         assert db.scalar(select(func.count()).select_from(Observation)) == 2
+
+
+def test_functionally_similar_tools_are_grouped_with_usage_profiles():
+    now = datetime.now(timezone.utc)
+    project = SimpleNamespace(name="demo")
+    calls = [
+        SimpleNamespace(tool_name="shell", input_text="pytest -q", status="success", project=project, created_at=now),
+        SimpleNamespace(tool_name="shell", input_text="pytest tests/test_api.py -q", status="failed", project=project, created_at=now.replace(microsecond=1)),
+        SimpleNamespace(tool_name="shell", input_text="rg TODO packages", status="success", project=project, created_at=now.replace(microsecond=2)),
+        SimpleNamespace(tool_name="web", input_text='{"search_query":[{"q":"memory server"}],"timeout_ms":1000}', status="unknown", project=project, created_at=now.replace(microsecond=3)),
+        SimpleNamespace(tool_name="web", input_text='{"search_query":[{"q":"tool archive"}],"timeout_ms":3000}', status="success", project=project, created_at=now.replace(microsecond=4)),
+    ]
+    groups = group_tool_executions(calls)
+    by_family = {group["family"]: group for group in groups}
+    assert set(by_family) == {"search", "testing"}
+    assert by_family["testing"]["count"] == 2
+    assert by_family["testing"]["success_count"] == 1
+    assert by_family["testing"]["failed_count"] == 1
+    assert by_family["testing"]["languages"] == ["Python"]
+    assert by_family["search"]["count"] == 3
+    assert by_family["search"]["tool_names"] == ["shell", "web"]
+    assert by_family["search"]["similarity"] >= 60
+    assert groups[0]["count"] == 3
+    summary = summarize_tool_groups(groups)
+    assert summary == {
+        "groups": 2, "calls": 5, "success": 3, "failed": 1, "unknown": 1,
+        "success_rate": 60.0, "repeated_groups": 2, "projects": 1,
+    }
+
+    profiles = [profile_tool_execution(call) for call in calls]
+    facets = tool_group_facets(profiles)
+    assert {item["value"] for item in facets["families"]} == {"search", "testing"}
+    assert [item["tool_name"] for item in filter_tool_profiles(profiles, family="testing")] == ["shell", "shell"]
+
+
+def test_tool_input_normalization_removes_volatile_values_but_keeps_structure():
+    first = normalize_tool_input('{"command":"pytest tests/test_api.py -q","limit":20,"request_id":"123e4567-e89b-12d3-a456-426614174000"}')
+    second = normalize_tool_input('{"command":"pytest tests/test_api.py -q","limit":50,"request_id":"223e4567-e89b-12d3-a456-426614174999"}')
+    assert first == second
+    assert "pytest tests/test_api.py" in first
+    assert tool_operation('{"command":"pytest tests/test_api.py"}') == "pytest"
+    assert tool_operation('{"open":[{"ref_id":"result-1"}]}') == "open"
+    assert tool_operation('const r = await tools.shell_command({command:"pytest -q"})') == "shell_command:pytest"
+    legacy = SimpleNamespace(input_text=None, metadata_={"tool_input": {"open": [{"ref_id": "result-1"}]}})
+    assert execution_input(legacy) == '{"open": [{"ref_id": "result-1"}]}'
+    assert stringify_input(legacy.metadata_) == '{"open": [{"ref_id": "result-1"}]}'
+    cached = SimpleNamespace(
+        tool_name="shell", input_text="rg changed", output_text="different",
+        metadata_=metadata_with_tool_profile({}, "shell", "pytest -q", "3 passed"),
+    )
+    assert profile_tool_execution(cached)["family"] == "testing"
+
+
+def test_cached_tool_profile_avoids_recomputing_large_outputs(monkeypatch):
+    metadata = metadata_with_tool_profile({}, "shell", "pytest -q", "3 passed")
+    execution = SimpleNamespace(
+        tool_name="shell", input_text="pytest -q", output_text="large output",
+        metadata_=metadata,
+    )
+    monkeypatch.setattr(
+        tool_grouping_module, "build_tool_profile",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("profile recomputed")),
+    )
+    assert profile_tool_execution(execution)["family"] == "testing"
 
 
 def test_worker_keeps_similar_tool_success_and_failure_memories_separate(monkeypatch):

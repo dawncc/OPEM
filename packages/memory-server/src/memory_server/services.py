@@ -1,3 +1,4 @@
+import hashlib
 import math
 import re
 import threading
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session as DbSession, selectinload
 
 from memory_common.schemas import ChatBatchCreate, MemoryFeedbackCreate, ObservationCreate, RecallItem
 
-from .models import ChatMessage, Memory, MemoryFeedback, MemorySource, Observation, ProcessingJob, Project, Session
+from .models import ChatMessage, Memory, MemoryFeedback, MemorySource, Observation, ProcessingJob, Project, RecallEvent, Session, TaskRun
 
 _embedding_model = None
 _chat_ingest_lock = threading.RLock()
@@ -62,6 +63,53 @@ def create_memory_feedback(db: DbSession, payload: MemoryFeedbackCreate):
     db.commit()
     db.refresh(item)
     return item, memory, counts, False
+
+
+def create_recall_event(
+    db: DbSession,
+    *,
+    query: str,
+    project_name: str | None,
+    items: list[RecallItem],
+    session_id: str | None = None,
+    turn_id: str | None = None,
+    policy_version: str | None = None,
+    idempotency_key: str | None = None,
+    latency_ms: float | None = None,
+) -> RecallEvent:
+    if idempotency_key:
+        existing = db.scalar(select(RecallEvent).where(RecallEvent.idempotency_key == idempotency_key))
+        if existing:
+            return existing
+    project = db.scalar(select(Project).where(Project.name == project_name)) if project_name else None
+    task = None
+    if project and session_id and turn_id:
+        task = db.scalar(
+            select(TaskRun)
+            .join(Session, TaskRun.session_id == Session.id)
+            .where(
+                TaskRun.project_id == project.id,
+                Session.external_session_id == session_id,
+                TaskRun.turn_id == turn_id,
+            )
+        )
+    event = RecallEvent(
+        project_id=project.id if project else None,
+        task_run_id=task.id if task else None,
+        external_session_id=session_id,
+        turn_id=turn_id,
+        query=query,
+        query_hash=hashlib.sha256(query.strip().casefold().encode("utf-8")).hexdigest(),
+        policy_version=policy_version,
+        result_ids=[str(item.memory_id) for item in items],
+        result_scores=[{"memory_id": str(item.memory_id), "score": item.score, "rank": index} for index, item in enumerate(items, 1)],
+        latency_ms=latency_ms,
+        idempotency_key=idempotency_key,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
 
 
 def query_embedding(value: str) -> list[float] | None:
@@ -197,6 +245,10 @@ def _create_chat_batch_locked(db: DbSession, payload: ChatBatchCreate) -> tuple[
         if message.event_id:
             existing_event_ids.add(message.event_id)
         accepted += 1
+    from memory_common.config import get_settings
+    if get_settings().memory_evolution_enabled:
+        from .trajectory import sync_session_task_runs
+        sync_session_task_runs(db, session)
     db.commit()
     return session, accepted, duplicates
 

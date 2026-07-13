@@ -65,6 +65,7 @@ class ParsedTurn:
     completed: bool = False
     summary: str | None = None
     duration_ms: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -111,7 +112,15 @@ def parse_rollout(path: Path, project_override: str | None = None) -> ParsedSess
                 continue
             if record_type == "turn_context":
                 current_turn = str(payload.get("turn_id") or current_turn or "") or None
-                get_turn(current_turn)
+                turn = get_turn(current_turn)
+                if turn:
+                    for key in (
+                        "model", "model_name", "reasoning_effort", "usage", "agent_id",
+                        "parent_agent_id", "branch_id", "policy_version", "strategy_version",
+                        "route_arm", "strategy_arm", "assignment_id", "assignment_probability",
+                    ):
+                        if payload.get(key) not in (None, ""):
+                            turn.metadata[key] = payload[key]
                 continue
             if record_type == "event_msg":
                 event_type = payload.get("type")
@@ -123,6 +132,9 @@ def parse_rollout(path: Path, project_override: str | None = None) -> ParsedSess
                         turn.completed = True
                         turn.summary = payload.get("last_agent_message") or turn.summary
                         turn.duration_ms = payload.get("duration_ms")
+                        for key in ("model", "model_name", "reasoning_effort", "usage"):
+                            if payload.get(key) not in (None, ""):
+                                turn.metadata[key] = payload[key]
                     lifecycle = "completed"
                 continue
             if record_type != "response_item":
@@ -145,6 +157,7 @@ def parse_rollout(path: Path, project_override: str | None = None) -> ParsedSess
                     "metadata": {
                         "capture": "codex-history", "turn_id": turn.turn_id,
                         "phase": payload.get("phase"), "source_file": str(path),
+                        **turn.metadata,
                     },
                 })
                 continue
@@ -157,6 +170,7 @@ def parse_rollout(path: Path, project_override: str | None = None) -> ParsedSess
                         "tool_input": payload.get("arguments", payload.get("input", {})),
                         "status": payload.get("status"),
                         "timestamp": timestamp,
+                        "metadata": dict(turn.metadata),
                     }
                 continue
             if item_type in {"function_call_output", "custom_tool_call_output"}:
@@ -178,7 +192,8 @@ def parse_rollout(path: Path, project_override: str | None = None) -> ParsedSess
                         "capture": "codex-history", "turn_id": target.turn_id,
                         "tool_name": call.get("tool_name") or "tool", "tool_use_id": call_id,
                         "status": status, "tool_input": _text(call.get("tool_input", {}), 100_000),
-                        "source_file": str(path),
+                        "source_file": str(path), "started_at": call.get("timestamp"),
+                        **(call.get("metadata") or {}),
                     },
                 })
 

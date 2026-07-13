@@ -8,7 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from memory_common.config import get_settings
 from memory_server.db import SessionLocal
-from memory_server.models import DailySummary, Memory, MemorySource, Observation, ProcessingJob, Project
+from memory_server.models import DailySummary, EvaluationJob, Memory, MemorySource, Observation, ProcessingJob, Project
+from memory_server.outcomes import process_evaluation_job
 from memory_server.services import tokenize
 
 
@@ -161,7 +162,9 @@ def process(job_id) -> None:
                 memory.concepts = sorted(set((memory.concepts or []) + (observation.concepts or [])))
                 memory.files = sorted(set((memory.files or []) + (observation.files or [])))
                 memory.importance = max(memory.importance, observation.importance)
-                memory.confidence = min(0.98, memory.confidence + 0.03)
+                # Source reinforcement is provenance, not proof that retrieval
+                # helped a later task. Utility confidence changes only through
+                # explicit feedback or evidence-backed evolution.
                 memory.search_text = " ".join([memory.title, memory.content, *memory.concepts, *memory.files])
                 relation = "reinforces"
             else:
@@ -205,6 +208,45 @@ def claim_one():
         return job_id
 
 
+def claim_evaluation_one():
+    with SessionLocal() as db:
+        stale = datetime.now(timezone.utc) - timedelta(minutes=10)
+        db.execute(update(EvaluationJob).where(
+            EvaluationJob.status == "processing", EvaluationJob.started_at < stale
+        ).values(status="pending"))
+        job = db.scalar(
+            select(EvaluationJob)
+            .where(EvaluationJob.status == "pending")
+            .order_by(EvaluationJob.created_at)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        if not job:
+            db.commit()
+            return None
+        job.status = "processing"
+        job.started_at = datetime.now(timezone.utc)
+        job.attempts += 1
+        job_id = job.id
+        db.commit()
+        return job_id
+
+
+def process_evaluation(job_id) -> None:
+    with SessionLocal() as db:
+        job = db.get(EvaluationJob, job_id)
+        if not job:
+            return
+        try:
+            process_evaluation_job(db, job)
+            db.commit()
+        except Exception as exc:
+            job.status = "pending" if job.attempts < 3 else "failed"
+            job.error = str(exc)[:4000]
+            job.finished_at = datetime.now(timezone.utc)
+            db.commit()
+
+
 def run() -> None:
     settings = get_settings()
     delay = settings.memory_worker_poll_seconds
@@ -219,7 +261,11 @@ def run() -> None:
         if job_id:
             process(job_id)
         else:
-            time.sleep(delay)
+            evaluation_job_id = claim_evaluation_one()
+            if evaluation_job_id:
+                process_evaluation(evaluation_job_id)
+            else:
+                time.sleep(delay)
 
 
 if __name__ == "__main__":

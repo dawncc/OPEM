@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     memory_timezone: str = "Asia/Shanghai"
     memory_recall_candidate_limit: int = 0
     memory_server_url: str = "http://127.0.0.1:8000"
+    memory_model_prices_json: str = "{}"
+    memory_evolution_enabled: bool = True
+    memory_strategy_canary_enabled: bool = False
+    memory_strategy_min_shadow_cases: int = 20
+    memory_strategy_min_canary_cases: int = 50
+    memory_strategy_canary_fraction: float = 0.05
+    memory_strategy_max_quality_regression: float = 0.02
 
 
 @lru_cache

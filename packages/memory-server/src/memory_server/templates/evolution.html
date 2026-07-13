@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}执行策略演进 · OPEM{% endblock %}{% block content %}
+<section class="hero">
+  <div class="hero-copy"><p class="eyebrow">Evidence-driven Evolution</p><h1 class="page-title">执行策略演进</h1><p class="subtitle">从真实任务积累证据；在因果证据不足时只展示相关性，不把工具成功或文本相似度当作路径必要性。</p></div>
+</section>
+
+<form class="search-panel" method="get"><div class="actions"><select name="project" aria-label="项目筛选"><option value="">全部项目</option>{% for item in projects %}<option value="{{ item.name }}" {% if selected_project == item.name %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select><button class="button primary" type="submit">筛选</button>{% if selected_project %}<a class="button" href="/evolution">清除</a>{% endif %}</div></form>
+
+<section class="trace-stats" aria-label="演进数据概览">
+  <div class="trace-stat"><span>TaskRun</span><strong>{{ summary.tasks }}</strong></div>
+  <div class="trace-stat"><span>已标注</span><strong>{{ summary.labeled_tasks }}</strong></div>
+  <div class="trace-stat"><span>强证据任务</span><strong>{{ summary.strong_tasks }}</strong></div>
+  <div class="trace-stat"><span>未知结果</span><strong>{{ summary.unknown_tasks }}</strong></div>
+  <div class="trace-stat"><span>采集完整度</span><strong>{{ '%.1f%%'|format(summary.average_capture_completeness * 100) }}</strong></div>
+  <div class="trace-stat"><span>策略分配</span><strong>{{ summary.assignments }}</strong></div>
+</section>
+
+<section class="section flush"><div class="section-header"><h2 class="section-title">策略评估</h2><span class="section-note">质量置信下界与真实成本</span></div><div class="table-wrap"><table><thead><tr><th>项目</th><th>路径臂 / 任务桶</th><th>任务</th><th>强证据</th><th>质量</th><th>成本</th><th>门禁</th></tr></thead><tbody>
+{% for item in policies %}<tr><td class="muted">{{ item.project }}</td><td><span class="table-title">{{ item.route_arm }}</span><br><span class="faint">{{ item.task_bucket }}</span></td><td>{{ item.cases }} / {{ item.labeled_cases }} 已标注</td><td>{{ item.strong_cases }}</td><td>{% if item.quality_mean is not none %}{{ '%.3f'|format(item.quality_mean) }} <span class="faint">LCB {{ '%.3f'|format(item.quality_lcb) }}</span>{% else %}—{% endif %}</td><td>{{ item.average_cost_usd|usd }}</td><td>{% if item.promotion_allowed %}<span class="badge" data-type="success">可进入 Shadow</span>{% else %}<span class="badge" data-type="unknown" title="{{ item.gate_reasons|join('; ') }}">仅观察</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7"><div class="empty-state">尚无 TaskRun；先安装 Hook 或回填历史会话。</div></td></tr>{% endfor %}
+</tbody></table></div></section>
+
+<section class="section flush"><div class="section-header"><h2 class="section-title">最近任务</h2><span class="section-note">最多 100 个</span></div><div class="table-wrap"><table><thead><tr><th>项目</th><th>任务</th><th>模型 / 路径</th><th>节点</th><th>结果证据</th><th>质量</th><th>采集</th></tr></thead><tbody>
+{% for task in tasks %}<tr><td class="muted">{{ task.project.name }}</td><td><a class="table-title" href="/traces/{{ task.session_id }}#request-1">{{ task.request_message.content[:90] if task.request_message else task.turn_id }}</a><br><span class="faint">{{ task.task_kind }} · {{ task.risk_level }}</span></td><td>{{ task.model_name or 'unknown' }}<br><span class="faint">{{ task.reasoning_effort or 'unknown' }} · {{ task.route_arm }}</span></td><td>{{ task.nodes|length }}<br><span class="faint">{{ task.path_scores|length }} 已评分</span></td><td>{{ task.evidence|length }}</td><td><span class="badge" data-type="{{ task.quality_status }}">{{ task.quality_status }}</span>{% if task.quality_score is not none %}<br><span class="faint">{{ '%.3f'|format(task.quality_score) }} / {{ '%.2f'|format(task.quality_confidence) }}</span>{% endif %}</td><td>{{ '%.0f%%'|format(task.capture_completeness * 100) }}</td></tr>
+{% else %}<tr><td colspan="7"><div class="empty-state">暂无任务数据</div></td></tr>{% endfor %}
+</tbody></table></div></section>
+
+<section class="section flush"><div class="section-header"><h2 class="section-title">策略版本</h2><span class="section-note">Canary 默认关闭</span></div><div class="table-wrap"><table><thead><tr><th>项目</th><th>版本</th><th>状态</th><th>配置</th><th>创建时间</th></tr></thead><tbody>
+{% for item in strategies %}<tr><td class="muted">{{ item.project.name }}</td><td class="table-title">{{ item.version }}</td><td><span class="badge" data-type="{{ item.status }}">{{ item.status }}</span></td><td class="muted">{{ item.config }}</td><td class="muted">{{ item.created_at|pretty_datetime }}</td></tr>{% else %}<tr><td colspan="5"><div class="empty-state">首次请求路径建议时会创建 baseline 策略。</div></td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

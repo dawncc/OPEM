@@ -15,10 +15,11 @@ OPEM, short for **One Personal Evolving Memory System**, aggregates conversation
 ## Highlights
 
 - **Cross-machine collection** — multiple Codex CLI, Desktop, or Remote hosts write to one Memory Server.
-- **MCP-first integration** — submit, recall, feed results back, end sessions, archive complete chat, and check health through six MCP tools.
+- **MCP-first integration** — submit, recall, report verified outcomes, request route advice, record controlled path ablations, archive complete chat, and check health.
 - **Raw history plus durable Memory** — the complete transcript remains available while reusable knowledge is compressed separately.
 - **Hybrid recall** — exact phrase, BM25, fuzzy, metadata, and optional vector similarity are fused with weighted RRF and deduplicated with MMR.
 - **Session Trace** — group each Session into user-led request paths and show Codex/tool nodes with measured or estimated timing.
+- **Tool Call Groups** — build usage profiles from inputs/outputs, language and keywords, then cluster functionally similar tools with explainable similarity and faceted filters.
 - **Tool archive and FAQ** — successful tools become recallable context; failed tools become evidence-backed FAQ entries.
 - **Daily summaries** — browse decisions, learnings, unresolved problems, and Memory highlights on a calendar.
 - **Small deployment footprint** — FastAPI, SQLAlchemy, one Worker, server-rendered pages, and SQLite or PostgreSQL/pgvector.
@@ -137,6 +138,9 @@ The Skill instructs Codex to:
 | `memory_submit` | Save a durable observation, decision, learning, problem, solution, or session summary. |
 | `memory_recall` | Return structured matches and a prompt-ready `<chat-memory>` context block. |
 | `memory_feedback` | Record recall utility and calibrate future ranking confidence. |
+| `memory_task_outcome` | Report evidence-backed task results without treating silence as success. |
+| `memory_route_recommend` | Return a versioned observe, shadow, canary, or active route recommendation. |
+| `memory_path_intervention` | Record paired-replay or randomized path-ablation evidence. |
 | `memory_session_end` | Submit completed work, decisions, unresolved items, and files. |
 | `memory_chat_submit` | Store the complete chronological user/assistant/system/tool transcript. |
 | `memory_health` | Check the server/database and flush the local pending queue. |
@@ -151,6 +155,10 @@ The MVP keeps the business API intentionally small:
 | `POST` | `/api/v1/chat/messages` | Receive complete chat batches and tool metadata. |
 | `POST` | `/api/v1/recall` | Run hybrid Memory retrieval. |
 | `POST` | `/api/v1/memories/feedback` | Record auditable recall feedback and evolve confidence. |
+| `POST` | `/api/v1/tasks/outcomes` | Attach strong, medium, or weak outcome evidence to a TaskRun. |
+| `POST` | `/api/v1/routes/recommend` | Assign a versioned execution strategy; observe/shadow never change runtime behavior. |
+| `POST` | `/api/v1/paths/interventions` | Record causal evidence from a controlled path ablation. |
+| `GET` | `/api/v1/evolution/report` | Compare quality confidence, failures, cost, and latency by route and task bucket. |
 | `GET` | `/api/v1/health` | Check database health and pending jobs. |
 
 Main UI routes:
@@ -203,6 +211,10 @@ A directly routable LAN, VPN, or private network address is preferred for perman
 | `MEMORY_EMBEDDING_ENABLED` | `false` | Enable local embeddings. |
 | `MEMORY_EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | Sentence-transformers model. |
 | `MEMORY_RECALL_CANDIDATE_LIMIT` | `0` | `0` searches every Memory; use a limit for larger datasets. |
+| `MEMORY_MODEL_PRICES_JSON` | `{}` | Optional model price overrides as input/cached/output rates per million tokens. |
+| `MEMORY_STRATEGY_CANARY_ENABLED` | `false` | Enable bounded low-risk canary assignment after evidence gates pass. |
+| `MEMORY_STRATEGY_MIN_SHADOW_CASES` | `20` | Strong-evidence tasks required before proposing a shadow route. |
+| `MEMORY_STRATEGY_MIN_CANARY_CASES` | `50` | Strong-evidence tasks required before canary eligibility. |
 | `MEMORY_DAILY_REFRESH_SECONDS` | `60` | Daily-summary refresh interval. |
 | `MEMORY_TIMEZONE` | `Asia/Shanghai` | Daily-summary grouping timezone. |
 
@@ -232,6 +244,7 @@ Only turns with a `task_complete` event are imported. The backfill uses the same
 ## Design notes
 
 - [Cost control and context compression for multi-turn tasks (Chinese)](docs/context-cost-compression.md)
+- [Zero-sample execution-path evolution (Chinese)](docs/execution-path-evolution.md)
 
 ## Project layout
 
@@ -256,7 +269,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Current test coverage includes chat preservation, Chinese/English retrieval, recall isolation, pending retries, tool outcome classification, FAQ construction, Worker consolidation boundaries, Trace timing, and HTML escaping.
+Current test coverage includes chat preservation, Chinese/English retrieval, recall isolation, pending retries, tool outcome classification, TaskRun/DAG derivation, evidence aggregation, causal-path guards, strategy gates, FAQ construction, Worker consolidation boundaries, Trace timing, and HTML escaping.
 
 ## Security scope
 

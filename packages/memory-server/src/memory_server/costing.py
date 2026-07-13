@@ -1,14 +1,14 @@
 """Best-effort per-request LLM cost estimates for captured conversations."""
 from __future__ import annotations
 
+import json
 from typing import Any, Iterable
 
 from memory_common.context_compression import estimate_tokens
 
 
-# Standard API text prices in USD per one million tokens (2026-07 snapshot).
-# Unknown models deliberately fall back to the default instead of pretending the
-# estimate is model-exact. Callers surface that assumption in the UI.
+# Conservative fallback prices in USD per one million tokens. Deployments can
+# override or extend these through MEMORY_MODEL_PRICES_JSON without a code change.
 MODEL_PRICES: dict[str, tuple[float, float, float]] = {
     "gpt-5.4": (2.50, 0.25, 15.00),
     "gpt-5.4-mini": (0.75, 0.075, 4.50),
@@ -17,6 +17,19 @@ MODEL_PRICES: dict[str, tuple[float, float, float]] = {
     "gpt-5.2": (1.75, 0.175, 14.00),
 }
 DEFAULT_MODEL = "gpt-5.4"
+
+
+def model_prices() -> dict[str, tuple[float, float, float]]:
+    from memory_common.config import get_settings
+    prices = dict(MODEL_PRICES)
+    try:
+        configured = json.loads(get_settings().memory_model_prices_json or "{}")
+        for name, value in configured.items():
+            if isinstance(value, (list, tuple)) and len(value) == 3:
+                prices[str(name).casefold()] = tuple(float(item) for item in value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return prices
 
 
 def _integer(value: Any) -> int | None:
@@ -38,9 +51,10 @@ def _first(mapping: dict[str, Any], *keys: str) -> Any:
 
 
 def _price_key(model: str | None) -> str:
-    if model in MODEL_PRICES:
+    prices = model_prices()
+    if model in prices:
         return model
-    for key in sorted(MODEL_PRICES, key=len, reverse=True):
+    for key in sorted(prices, key=len, reverse=True):
         if model and model.startswith(key + "-"):
             return key
     return DEFAULT_MODEL
@@ -92,7 +106,8 @@ def estimate_request_cost(messages: Iterable[Any]) -> dict[str, Any]:
         accuracy = "estimated"
 
     price_model = _price_key(model)
-    input_rate, cached_rate, output_rate = MODEL_PRICES[price_model]
+    prices = model_prices()
+    input_rate, cached_rate, output_rate = prices.get(price_model, prices[DEFAULT_MODEL])
     uncached = max(0, input_tokens - cached)
     cost = (uncached * input_rate + cached * cached_rate + output_tokens * output_rate) / 1_000_000
     return {

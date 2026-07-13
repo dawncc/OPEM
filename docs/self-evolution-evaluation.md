@@ -57,3 +57,7 @@ python scripts/evaluate_self_evolution.py --project OPEM --k 5 --min-cases 20
 ```
 
 输出包含 baseline、最佳候选、各项指标及 `promotion_allowed`。候选策略不会自动应用到线上。
+
+## 执行路径自演进扩展
+
+当前实现已增加零样本 TaskRun 闭环：Hook/历史记录采集模型与 Agent 元数据，聊天入库派生执行 DAG，Worker 生成分级结果证据和观察型路径分数，离线报告按任务类型与风险比较质量置信区间、成本与延迟。Shadow 候选需要至少 20 个强证据任务，Canary 需要至少 50 个且总开关默认关闭。路径必要性只接受配对回放或随机消融证据。具体数据模型、接口和回填命令见 [零样本执行路径自演进](execution-path-evolution.md)。

@@ -1,38 +1,144 @@
 {% extends "base.html" %}{% block title %}工具归档 · OPEM{% endblock %}{% block content %}
+{% set safe_profiles = profiles_by_id|default({}) %}
+{% set safe_previews = previews|default({}) %}
 <section class="hero">
   <div class="hero-copy">
     <p class="eyebrow">Tool Archive</p>
     <h1 class="page-title">工具归档</h1>
-    <p class="subtitle">完整保存每次工具执行。明确成功的结果进入 Memory，失败结果整理为可追溯 FAQ，状态不明的记录仅归档。</p>
+    <p class="subtitle">按工具和操作聚合相似调用，快速查看使用频次、成功率与历史输入；也可切换为逐条记录。</p>
   </div>
   <div class="actions"><a class="button" href="/faq">失败 FAQ</a><a class="button primary" href="/search?q=tool-success">召回成功上下文</a></div>
 </section>
 
-<section class="section">
-  <div class="section-header">
-    <h2 class="section-title">执行记录</h2>
-    <span class="section-note">最多显示最近 200 条</span>
+{% if selected_view == 'grouped' %}
+<section class="tool-aggregate" aria-labelledby="aggregate-title">
+  <div class="tool-aggregate-head">
+    <div><p class="eyebrow">Aggregated overview</p><h2 id="aggregate-title">调用聚合概览</h2></div>
+    <span>当前筛选范围 · 最多统计最近 1000 次调用</span>
   </div>
-  <nav class="filter-pills" aria-label="工具状态筛选">
-    <a class="filter-pill {% if not selected_status %}active{% endif %}" href="/tools">全部<span class="filter-count">{{ counts.success + counts.failed + counts.unknown }}</span></a>
-    <a class="filter-pill {% if selected_status == 'success' %}active{% endif %}" href="/tools?status=success">成功<span class="filter-count">{{ counts.success }}</span></a>
-    <a class="filter-pill {% if selected_status == 'failed' %}active{% endif %}" href="/tools?status=failed">失败<span class="filter-count">{{ counts.failed }}</span></a>
-    <a class="filter-pill {% if selected_status == 'unknown' %}active{% endif %}" href="/tools?status=unknown">待确认<span class="filter-count">{{ counts.unknown }}</span></a>
-  </nav>
+  <div class="tool-summary-grid">
+    <article class="tool-summary-card primary"><span>相似调用组</span><strong>{{ aggregate.groups }}</strong><small>{{ aggregate.repeated_groups }} 个重复使用组</small></article>
+    <article class="tool-summary-card"><span>调用总量</span><strong>{{ aggregate.calls }}</strong><small>覆盖 {{ aggregate.projects }} 个项目</small></article>
+    <article class="tool-summary-card success"><span>成功率</span><strong>{{ aggregate.success_rate }}%</strong><small>{{ aggregate.success }} 次成功</small></article>
+    <article class="tool-summary-card failed"><span>失败调用</span><strong>{{ aggregate.failed }}</strong><small>{% if aggregate.calls %}占当前结果 {{ ((aggregate.failed * 100 / aggregate.calls)|round(1)) }}%{% else %}暂无调用{% endif %}</small></article>
+    <article class="tool-summary-card unknown"><span>待确认</span><strong>{{ aggregate.unknown }}</strong><small>尚未判定执行结果</small></article>
+  </div>
+</section>
+{% endif %}
+
+<section class="section tool-controls">
+  <div class="section-header">
+    <h2 class="section-title">{% if selected_view == 'grouped' %}分组明细{% else %}执行记录{% endif %}</h2>
+    <span class="section-note">
+      {% if selected_view == 'grouped' %}按调用次数排序 · 可展开查看原始记录{% else %}最多显示最近 200 条{% endif %}
+    </span>
+  </div>
+  <form class="tool-search-form" method="get" action="/tools">
+    <input type="hidden" name="view" value="{{ selected_view }}">
+    {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+    {% if selected_family %}<input type="hidden" name="family" value="{{ selected_family }}">{% endif %}
+    {% if selected_language %}<input type="hidden" name="language" value="{{ selected_language }}">{% endif %}
+    {% if selected_tag %}<input type="hidden" name="tag" value="{{ selected_tag }}">{% endif %}
+    {% if min_similarity %}<input type="hidden" name="min_similarity" value="{{ min_similarity }}">{% endif %}
+    <input name="q" value="{{ q }}" placeholder="搜索工具名、输入、输出、错误或项目" aria-label="搜索工具调用">
+    <button class="button primary" type="submit">检索</button>
+    {% if q %}<a class="button" href="{{ search_clear_url }}">清除</a>{% endif %}
+  </form>
+  {% if selected_view == 'grouped' %}
+  <form class="tool-facet-form" method="get" action="/tools">
+    <input type="hidden" name="view" value="grouped">
+    {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+    {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    <label><span>功能类别</span><select name="family"><option value="">全部功能</option>{% for item in facets.families %}<option value="{{ item.value }}" {% if selected_family == item.value %}selected{% endif %}>{{ item.label }}（{{ item.count }}）</option>{% endfor %}</select></label>
+    <label><span>语言</span><select name="language"><option value="">全部语言</option>{% for item in facets.languages %}<option value="{{ item.value }}" {% if selected_language == item.value %}selected{% endif %}>{{ item.label }}（{{ item.count }}）</option>{% endfor %}</select></label>
+    <label><span>关键词标签</span><select name="tag"><option value="">全部标签</option>{% for item in facets.keywords %}<option value="{{ item.value }}" {% if selected_tag == item.value %}selected{% endif %}>{{ item.label }}（{{ item.count }}）</option>{% endfor %}</select></label>
+    <label><span>组内近似度</span><select name="min_similarity"><option value="0">不限</option>{% for value, label in [(0.6, '≥ 60%'), (0.75, '≥ 75%'), (0.9, '≥ 90%')] %}<option value="{{ value }}" {% if min_similarity == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <button class="button primary" type="submit">应用过滤</button>
+    {% if selected_family or selected_language or selected_tag or min_similarity %}<a class="button" href="{{ classification_clear_url }}">重置分类</a>{% endif %}
+  </form>
+  {% endif %}
+  <div class="tool-filter-row">
+    <nav class="filter-pills" aria-label="工具状态筛选">
+      <a class="filter-pill {% if not selected_status %}active{% endif %}" href="/tools?view={{ selected_view }}{{ filter_suffix }}">全部<span class="filter-count">{{ counts.success + counts.failed + counts.unknown }}</span></a>
+      <a class="filter-pill {% if selected_status == 'success' %}active{% endif %}" href="/tools?view={{ selected_view }}&amp;status=success{{ filter_suffix }}">成功<span class="filter-count">{{ counts.success }}</span></a>
+      <a class="filter-pill {% if selected_status == 'failed' %}active{% endif %}" href="/tools?view={{ selected_view }}&amp;status=failed{{ filter_suffix }}">失败<span class="filter-count">{{ counts.failed }}</span></a>
+      <a class="filter-pill {% if selected_status == 'unknown' %}active{% endif %}" href="/tools?view={{ selected_view }}&amp;status=unknown{{ filter_suffix }}">待确认<span class="filter-count">{{ counts.unknown }}</span></a>
+    </nav>
+    <nav class="view-toggle" aria-label="工具归档视图">
+      <a class="filter-pill {% if selected_view == 'grouped' %}active{% endif %}" href="/tools?view=grouped{{ view_suffix }}">聚合</a>
+      <a class="filter-pill {% if selected_view == 'list' %}active{% endif %}" href="/tools?view=list{{ view_suffix }}">逐条</a>
+    </nav>
+  </div>
 </section>
 
+{% if selected_view == 'grouped' %}
+<div class="tool-group-list">
+{% for group in groups %}
+  <details class="tool-group-card" id="group-{{ group.id }}">
+    <summary class="tool-group-summary">
+      <span class="tool-group-main">
+        <span class="archive-name">{{ group.family_label }}</span>
+        <span class="operation-badge">{{ group.action }}</span>
+        <span class="similarity-badge">近似度 {{ group.similarity }}%</span>
+        <span class="archive-meta">工具：{{ group.tool_names|join('、') }} · {{ group.projects|join('、') }} · 最近 {{ group.last_seen|pretty_datetime }}</span>
+        <span class="tool-group-tags">{% for language in group.languages[:4] %}<i class="tool-tag language">{{ language }}</i>{% endfor %}{% for keyword in group.keywords[:6] %}<i class="tool-tag">{{ keyword }}</i>{% endfor %}</span>
+      </span>
+      <span class="tool-group-metrics">
+        <span class="group-count">{{ group.count }} 次</span>
+        {% if group.success_count %}<span class="status-badge success">成功 {{ group.success_count }}</span>{% endif %}
+        {% if group.failed_count %}<span class="status-badge failed">失败 {{ group.failed_count }}</span>{% endif %}
+        {% if group.unknown_count %}<span class="status-badge unknown">待确认 {{ group.unknown_count }}</span>{% endif %}
+      </span>
+    </summary>
+    <div class="tool-group-body">
+      <div class="tool-group-context">
+        <span>首次 {{ group.first_seen|pretty_datetime }}</span><span>·</span><span>功能画像 + 输入/输出关键词 + 语言近似度聚类</span>
+      </div>
+      <div class="group-execution-list">
+      {% for profile in group.profiles[:2] %}{% set execution = profile.execution %}
+        {% set preview = safe_previews.get(execution.id, {}) %}
+        <article class="group-execution {{ execution.status }}">
+          <div class="archive-head"><span class="archive-meta"><b>{{ execution.project.name }}</b><span>·</span><time>{{ execution.created_at|pretty_datetime }}</time>{% if execution.error_category %}<span>·</span><span>{{ execution.error_category }}</span>{% endif %}</span><span class="status-badge {{ execution.status }}">{% if execution.status == 'success' %}成功{% elif execution.status == 'failed' %}失败{% else %}待确认{% endif %}</span></div>
+          <div class="execution-profile"><span>{{ profile.tool_name }} / {{ profile.operation }}</span>{% for language in profile.languages %}<i class="tool-tag language">{{ language }}</i>{% endfor %}{% for keyword in profile.keywords[:5] %}<i class="tool-tag">{{ keyword }}</i>{% endfor %}</div>
+          {% if preview.error_reason %}<p class="archive-reason"><b>失败理由：</b>{{ preview.error_reason }}</p>{% endif %}
+          {% if preview.input_length %}<details><summary class="muted">调用输入预览 · 原始 {{ preview.input_length }} 字符</summary><pre class="archive-input">{{ preview.input_preview }}{% if preview.input_length > 2000 %}
+…（内容较长，已截断）{% endif %}</pre></details>{% endif %}
+          {% if preview.output_length %}<details><summary class="muted">输出预览 · 原始 {{ preview.output_length }} 字符</summary><pre class="archive-output">{{ preview.output_preview }}{% if preview.output_length > 4000 %}
+…（内容较长，已截断）{% endif %}</pre></details>
+          {% endif %}
+          <div class="archive-actions"><span>{% if execution.observation_id %}已进入 Memory 处理链路{% else %}仅原始归档{% endif %}</span><a href="/sessions/{{ execution.session_id }}">查看会话 →</a></div>
+        </article>
+      {% endfor %}
+      {% if group.count > 2 %}
+        <div class="tool-group-more">本组另有 {{ group.count - 2 }} 次调用未在首屏展开。<a href="/tools?view=list{{ view_suffix }}">切换到逐条视图查看</a></div>
+      {% endif %}
+      </div>
+    </div>
+  </details>
+{% else %}
+  <section class="section"><div class="empty-state"><div class="empty-icon">⌘</div><p>没有找到匹配的工具调用组。</p></div></section>
+{% endfor %}
+</div>
+{% else %}
 <div class="archive-grid">
 {% for execution in executions %}
+  {% set profile = safe_profiles.get(execution.id) %}
+  {% set preview = safe_previews.get(execution.id, {}) %}
   <article class="archive-card {{ execution.status }}">
     <div class="archive-head"><span class="archive-name">{{ execution.tool_name }}</span><span class="status-badge {{ execution.status }}">{% if execution.status == 'success' %}成功{% elif execution.status == 'failed' %}失败{% else %}待确认{% endif %}</span></div>
     <div class="archive-meta"><span>{{ execution.project.name }}</span><span>·</span><time>{{ execution.created_at|pretty_datetime }}</time>{% if execution.error_category %}<span>·</span><span>{{ execution.error_category }}</span>{% endif %}</div>
-    {% if execution.error_reason %}<p class="archive-reason"><b>失败理由：</b>{{ execution.error_reason }}</p>{% endif %}
-    {% if execution.input_text %}<details><summary class="muted">查看调用输入</summary><pre class="archive-input">{{ execution.input_text }}</pre></details>{% endif %}
-    <details><summary class="muted">查看完整原始输出 · {{ execution.output_text|length }} 字符</summary><pre class="archive-output">{{ execution.output_text }}</pre></details>
-    <div class="archive-actions"><span>{% if execution.observation_id %}已进入 Memory 处理链路{% else %}仅原始归档{% endif %}</span><a href="/sessions/{{ execution.session.id }}">查看会话 →</a></div>
+    {% if profile %}<div class="execution-profile"><span>{{ profile.family_label }} / {{ profile.action }}</span>{% for language in profile.languages %}<i class="tool-tag language">{{ language }}</i>{% endfor %}{% for keyword in profile.keywords[:5] %}<i class="tool-tag">{{ keyword }}</i>{% endfor %}</div>{% endif %}
+    {% if preview.error_reason %}<p class="archive-reason"><b>失败理由：</b>{{ preview.error_reason }}</p>{% endif %}
+    {% if preview.input_length %}<details><summary class="muted">调用输入预览 · 原始 {{ preview.input_length }} 字符</summary><pre class="archive-input">{{ preview.input_preview }}{% if preview.input_length > 2000 %}
+…（内容较长，已截断）{% endif %}</pre></details>{% endif %}
+    {% if preview.output_length %}<details><summary class="muted">输出预览 · 原始 {{ preview.output_length }} 字符</summary><pre class="archive-output">{{ preview.output_preview }}{% if preview.output_length > 4000 %}
+…（内容较长，已截断）{% endif %}</pre></details>
+    {% endif %}
+    <div class="archive-actions"><span>{% if execution.observation_id %}已进入 Memory 处理链路{% else %}仅原始归档{% endif %}</span><a href="/sessions/{{ execution.session_id }}">查看会话 →</a></div>
   </article>
 {% else %}
-  <section class="section" style="grid-column:1/-1"><div class="empty-state"><div class="empty-icon">⌘</div><p>当前筛选下还没有工具执行记录。</p></div></section>
+  <section class="section" style="grid-column:1/-1"><div class="empty-state"><div class="empty-icon">⌘</div><p>没有找到匹配的工具执行记录。</p></div></section>
 {% endfor %}
 </div>
+{% endif %}
 {% endblock %}

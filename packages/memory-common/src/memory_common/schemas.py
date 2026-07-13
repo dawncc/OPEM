@@ -65,6 +65,10 @@ class RecallRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     project: str | None = None
     limit: int = Field(default=8, ge=1, le=50)
+    session_id: str | None = Field(default=None, max_length=200)
+    turn_id: str | None = Field(default=None, max_length=255)
+    policy_version: str | None = Field(default=None, max_length=80)
+    idempotency_key: str | None = Field(default=None, max_length=128)
 
     @field_validator("query")
     @classmethod
@@ -96,6 +100,7 @@ class RecallItem(BaseModel):
 class RecallResponse(BaseModel):
     items: list[RecallItem]
     context: str = ""
+    recall_event_id: UUID | None = None
 
 
 class MemoryFeedbackCreate(BaseModel):
@@ -121,3 +126,76 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     pending_jobs: int
+
+
+class OutcomeEvidenceCreate(BaseModel):
+    project: str = Field(min_length=1, max_length=200)
+    session_id: str = Field(min_length=1, max_length=200)
+    turn_id: str = Field(min_length=1, max_length=255)
+    evidence_type: str = Field(min_length=1, max_length=50)
+    metric: str = Field(default="task_success", min_length=1, max_length=80)
+    value: float = Field(ge=-1.0, le=1.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    strength: str = Field(default="strong", pattern="^(strong|medium|weak)$")
+    source_type: str = Field(default="agent_report", min_length=1, max_length=40)
+    source_ref: str | None = Field(default=None, max_length=500)
+    rationale: str | None = Field(default=None, max_length=4000)
+    independence_group: str = Field(default="explicit_outcome", min_length=1, max_length=80)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class OutcomeEvidenceResponse(BaseModel):
+    task_run_id: UUID
+    evidence_id: UUID
+    duplicate: bool = False
+    quality_score: float | None = None
+    quality_confidence: float = 0.0
+    quality_status: str = "unknown"
+
+
+class RouteRecommendationRequest(BaseModel):
+    project: str = Field(min_length=1, max_length=200)
+    task: str = Field(min_length=1, max_length=4000)
+    session_id: str | None = Field(default=None, max_length=200)
+    turn_id: str | None = Field(default=None, max_length=255)
+    task_kind: str | None = Field(default=None, max_length=40)
+    risk_level: str = Field(default="unknown", pattern="^(unknown|low|medium|high)$")
+    available_model_levels: list[str] = Field(default_factory=list, max_length=20)
+    current_model: str | None = Field(default=None, max_length=200)
+
+
+class RouteRecommendationResponse(BaseModel):
+    assignment_id: UUID
+    mode: str
+    route_arm: str
+    policy_version: str
+    model_level: str | None = None
+    reasoning_effort: str | None = None
+    max_agents: int = 0
+    max_tool_calls: int = 0
+    verification_mode: str = "targeted"
+    assignment_probability: float = 1.0
+    reasons: list[str] = Field(default_factory=list)
+
+
+class PathInterventionCreate(BaseModel):
+    project: str = Field(min_length=1, max_length=200)
+    session_id: str = Field(min_length=1, max_length=200)
+    turn_id: str = Field(min_length=1, max_length=255)
+    path_key: str = Field(min_length=1, max_length=300)
+    method: str = Field(pattern="^(paired_replay|randomized)$")
+    full_quality: float = Field(ge=0.0, le=1.0)
+    counterfactual_quality: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+    rationale: str | None = Field(default=None, max_length=4000)
+
+
+class PathInterventionResponse(BaseModel):
+    path_score_id: UUID
+    evidence_id: UUID
+    necessity: float
+    importance: float
+    efficiency: float | None = None
+    duplicate: bool = False

@@ -8,12 +8,17 @@ from sqlalchemy.orm import Session as DbSession, selectinload
 
 from .conversation import classify_tool_status
 from .models import ChatMessage, Observation, ProcessingJob, Project, Session, ToolExecution
+from .tool_grouping import TOOL_PROFILE_CACHE_KEY, TOOL_PROFILE_VERSION, metadata_with_tool_profile
 
 ERROR_LINE = re.compile(r"(?:AssertionError|TypeError|ValueError|RuntimeError|PermissionError|FileNotFoundError|TimeoutError|ConnectionError|Exception|ERROR|FAILED|FATAL|Traceback)", re.IGNORECASE)
 
 
 def stringify_input(metadata: dict[str, Any]) -> str | None:
-    value = metadata.get("input") or metadata.get("command") or metadata.get("args") or metadata.get("arguments")
+    value = (
+        metadata.get("input") or metadata.get("tool_input") or metadata.get("command")
+        or metadata.get("args") or metadata.get("arguments") or metadata.get("tool_args")
+        or metadata.get("tool_arguments")
+    )
     if value is None:
         return None
     if isinstance(value, str):
@@ -114,7 +119,7 @@ def archive_tool_message(db: DbSession, project: Project, session: Session, mess
         tool_name=name, status=status, input_text=input_text, output_text=message.content,
         error_reason=reason, error_category=category, evidence=reason, failure_signature=signature,
         faq_question=question, faq_answer=answer, derivation_version="v1",
-        metadata_=metadata, created_at=message.created_at,
+        metadata_=metadata_with_tool_profile(metadata, name, input_text, message.content), created_at=message.created_at,
     )
     db.add(archive)
     db.flush()
@@ -137,6 +142,22 @@ def archive_tool_message(db: DbSession, project: Project, session: Session, mess
     return archive
 
 
+def backfill_tool_profiles(db: DbSession) -> int:
+    executions = db.scalars(select(ToolExecution)).all()
+    updated = 0
+    for execution in executions:
+        input_text = execution.input_text or stringify_input(execution.metadata_ or {})
+        if execution.input_text is None and input_text is not None:
+            execution.input_text = input_text
+        cached = (execution.metadata_ or {}).get(TOOL_PROFILE_CACHE_KEY)
+        if not isinstance(cached, dict) or cached.get("version") != TOOL_PROFILE_VERSION:
+            execution.metadata_ = metadata_with_tool_profile(
+                execution.metadata_, execution.tool_name, input_text, execution.output_text,
+            )
+            updated += 1
+    return updated
+
+
 def backfill_tool_archives(db: DbSession) -> int:
     messages = db.scalars(
         select(ChatMessage)
@@ -146,5 +167,6 @@ def backfill_tool_archives(db: DbSession) -> int:
     ).all()
     for message in messages:
         archive_tool_message(db, message.session.project, message.session, message)
+    backfill_tool_profiles(db)
     db.commit()
     return len(messages)
