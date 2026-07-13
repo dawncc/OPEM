@@ -18,9 +18,7 @@ def append_pending(payload: dict[str, Any]) -> None:
 
 def drain_pending(send) -> int:
     path = pending_path()
-    if not path.exists():
-        return 0
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
     remaining: list[str] = []
     sent = 0
     for index, line in enumerate(lines):
@@ -30,7 +28,17 @@ def drain_pending(send) -> int:
         except Exception:
             remaining.extend(lines[index:])
             break
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text("\n".join(remaining) + ("\n" if remaining else ""), encoding="utf-8")
-    temporary.replace(path)
+    if path.exists() or lines:
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text("\n".join(remaining) + ("\n" if remaining else ""), encoding="utf-8")
+        temporary.replace(path)
+    spool = path.parent / "pending.d"
+    if spool.exists():
+        for queued_path in sorted(spool.glob("*.json")):
+            try:
+                send(json.loads(queued_path.read_text(encoding="utf-8")))
+                queued_path.unlink(missing_ok=True)
+                sent += 1
+            except Exception:
+                break
     return sent

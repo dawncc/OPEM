@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from concurrent.futures import ThreadPoolExecutor
+from io import StringIO
 from pathlib import Path
 
 from sqlalchemy import create_engine, func, select
@@ -76,6 +77,71 @@ def test_hook_maps_request_tool_and_stop_to_immediate_deliveries(tmp_path, monke
     assert deliveries[1][2]["messages"][0]["metadata"]["status"] == "failed"
     assert deliveries[2][2]["session_status"] == "completed"
     assert deliveries[3][2]["idempotency_key"]
+
+
+def test_hook_delivery_is_persisted_before_network_and_retried(tmp_path, monkeypatch):
+    capture = load_capture_module()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    attempts = []
+
+    def offline(server, endpoint, payload):
+        attempts.append((server, endpoint, payload))
+        raise OSError("server unavailable")
+
+    monkeypatch.setattr(capture, "request_json", offline)
+    capture.deliver("http://memory.test", "/api/v1/chat/messages", {"event_id": "event-1"})
+    queued = list((tmp_path / "codex-memory" / "pending.d").glob("*.json"))
+    assert len(queued) == 1
+    assert json.loads(queued[0].read_text(encoding="utf-8"))["event_id"] == "event-1"
+
+    delivered = []
+    monkeypatch.setattr(capture, "request_json", lambda server, endpoint, payload: delivered.append((endpoint, payload)) or {})
+    assert capture.flush_pending("http://memory.test") == 1
+    assert delivered == [("/api/v1/chat/messages", {"event_id": "event-1"})]
+    assert not list((tmp_path / "codex-memory" / "pending.d").glob("*.json"))
+
+
+def test_concurrent_hook_queue_writes_do_not_drop_events(tmp_path, monkeypatch):
+    capture = load_capture_module()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(lambda index: capture.append_pending(
+            "/api/v1/chat/messages", {"event_id": f"event-{index}"},
+        ), range(40)))
+
+    queued = list((tmp_path / "codex-memory" / "pending.d").glob("*.json"))
+    assert len(queued) == 40
+    assert {json.loads(path.read_text(encoding="utf-8"))["event_id"] for path in queued} == {
+        f"event-{index}" for index in range(40)
+    }
+
+
+def test_current_hook_event_is_delivered_before_offline_backlog(tmp_path, monkeypatch):
+    capture = load_capture_module()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    capture.append_pending("/api/v1/chat/messages", {"event_id": "older"})
+    delivered = []
+    monkeypatch.setattr(capture, "request_json", lambda server, endpoint, payload: delivered.append(payload["event_id"]) or {})
+
+    capture.deliver("http://memory.test", "/api/v1/chat/messages", {"event_id": "current"})
+
+    assert delivered == ["current", "older"]
+    assert not list((tmp_path / "codex-memory" / "pending.d").glob("*.json"))
+
+
+def test_hook_main_records_ignored_payload_for_diagnosis(tmp_path, monkeypatch):
+    capture = load_capture_module()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setattr(capture.sys, "stdin", StringIO(json.dumps({
+        "hook_event_name": "UnknownEvent", "session_id": "session-1", "turn_id": "turn-1",
+    })))
+
+    assert capture.main() == 0
+    status = json.loads((tmp_path / "codex-memory" / "capture-status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "ignored"
+    assert status["hook_event_name"] == "UnknownEvent"
+    assert status["payload_keys"] == ["hook_event_name", "session_id", "turn_id"]
 
 
 def test_turn_observation_is_processed_into_memory_input():

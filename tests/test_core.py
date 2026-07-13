@@ -1,3 +1,4 @@
+import json
 from uuid import uuid4
 
 import pytest
@@ -69,6 +70,21 @@ def test_pending_queue_retries_without_losing_tail(tmp_path, monkeypatch):
     assert drain_pending(send) == 1
     assert accepted == [{"content": "first"}]
     assert "second" in pending_path().read_text(encoding="utf-8")
+
+
+def test_health_drain_includes_hook_spool_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    spool = pending_path().parent / "pending.d"
+    spool.mkdir()
+    queued = spool / "event.json"
+    queued.write_text(json.dumps({
+        "_queue_endpoint": "/api/v1/chat/messages", "content": "captured",
+    }), encoding="utf-8")
+    accepted = []
+
+    assert drain_pending(accepted.append) == 1
+    assert accepted == [{"_queue_endpoint": "/api/v1/chat/messages", "content": "captured"}]
+    assert not queued.exists()
 
 
 def test_recall_context_is_prompt_ready_and_source_attributed():

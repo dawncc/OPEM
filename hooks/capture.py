@@ -11,9 +11,9 @@ import os
 import socket
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
@@ -25,6 +25,44 @@ def client_dir() -> Path:
     path = codex_home() / "codex-memory"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def spool_dir() -> Path:
+    path = client_dir() / "pending.d"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def write_diagnostic(name: str, payload: dict[str, Any]) -> None:
+    """Best-effort diagnostics that can never break the active Codex turn."""
+    path = client_dir() / name
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+
+
+def diagnostic_context(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {"payload_type": type(payload).__name__}
+    return {
+        "hook_event_name": payload.get("hook_event_name"),
+        "session_id": payload.get("session_id") or payload.get("thread_id"),
+        "turn_id": payload.get("turn_id"),
+        "payload_keys": sorted(str(key) for key in payload),
+    }
+
+
+def record_error(stage: str, exc: BaseException, payload: Any = None) -> None:
+    write_diagnostic("capture-error.json", {
+        "timestamp": time.time(),
+        "stage": stage,
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+        **diagnostic_context(payload),
+    })
 
 
 def load_config() -> dict[str, Any]:
@@ -62,11 +100,21 @@ def with_queue_lock(callback) -> Any:
         lock_path.unlink(missing_ok=True)
 
 
-def append_pending(endpoint: str, payload: dict[str, Any]) -> None:
-    def write() -> None:
-        with (client_dir() / "pending.jsonl").open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"_queue_endpoint": endpoint, **payload}, ensure_ascii=False) + "\n")
-    with_queue_lock(write)
+def append_pending(endpoint: str, payload: dict[str, Any]) -> Path:
+    """Persist one delivery atomically before attempting the network request."""
+    queued = {"_queue_endpoint": endpoint, **payload}
+    body = json.dumps(queued, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    digest = hashlib.sha256(body).hexdigest()
+    destination = spool_dir() / f"{time.time_ns():020d}-{digest}.json"
+    temporary = spool_dir() / f".{digest}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    temporary.write_bytes(body)
+    try:
+        temporary.replace(destination)
+    except OSError:
+        if not destination.exists():
+            raise
+        temporary.unlink(missing_ok=True)
+    return destination
 
 
 def request_json(server: str, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -79,39 +127,79 @@ def request_json(server: str, endpoint: str, payload: dict[str, Any]) -> dict[st
         return json.loads(response.read().decode("utf-8"))
 
 
-def flush_pending(server: str) -> int:
-    def drain() -> int:
+def migrate_legacy_pending() -> int:
+    """Move the old shared JSONL queue into contention-free spool files."""
+    def migrate() -> int:
         path = client_dir() / "pending.jsonl"
         if not path.exists():
             return 0
         lines = path.read_text(encoding="utf-8").splitlines()
-        remaining: list[str] = []
-        sent = 0
-        for index, line in enumerate(lines):
+        malformed: list[str] = []
+        migrated = 0
+        for line in lines:
             try:
                 payload = json.loads(line)
                 endpoint = payload.pop("_queue_endpoint", "/api/v1/observations")
-                request_json(server, endpoint, payload)
-                sent += 1
-            except Exception:
-                remaining.extend(lines[index:])
-                break
+                append_pending(endpoint, payload)
+                migrated += 1
+            except Exception as exc:
+                malformed.append(line)
+                record_error("migrate-legacy-pending", exc)
         temporary = path.with_suffix(".tmp")
-        temporary.write_text("\n".join(remaining) + ("\n" if remaining else ""), encoding="utf-8")
+        temporary.write_text("\n".join(malformed) + ("\n" if malformed else ""), encoding="utf-8")
         temporary.replace(path)
-        return sent
+        return migrated
     try:
-        return with_queue_lock(drain)
-    except Exception:
+        return with_queue_lock(migrate)
+    except Exception as exc:
+        record_error("migrate-legacy-pending", exc)
         return 0
 
 
+def send_queued(server: str, path: Path) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    endpoint = payload.pop("_queue_endpoint", "/api/v1/observations")
+    request_json(server, endpoint, payload)
+    path.unlink(missing_ok=True)
+
+
+def flush_pending(server: str, time_budget: float = 6.0) -> int:
+    migrate_legacy_pending()
+    deadline = time.monotonic() + time_budget
+    sent = 0
+    for path in sorted(spool_dir().glob("*.json")):
+        if time.monotonic() >= deadline:
+            break
+        queued_context: Any = None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            queued_context = payload
+            send_queued(server, path)
+            sent += 1
+        except Exception as exc:
+            record_error("flush-pending", exc, queued_context)
+            break
+    return sent
+
+
 def deliver(server: str, endpoint: str, payload: dict[str, Any]) -> None:
-    flush_pending(server)
+    # Write-ahead delivery prevents process termination, timeouts, or concurrent
+    # hooks from losing an event between capture and the HTTP request.
     try:
+        queued_path = append_pending(endpoint, payload)
+    except Exception as exc:
+        record_error("queue-delivery", exc, payload)
+        # Disk failures should not prevent a best-effort direct delivery.
         request_json(server, endpoint, payload)
-    except Exception:
-        append_pending(endpoint, payload)
+        return
+    try:
+        # Prioritize the current event so the live page is not delayed behind a
+        # large offline backlog. The durable file remains if this request fails.
+        send_queued(server, queued_path)
+    except Exception as exc:
+        record_error("deliver-current", exc, payload)
+        return
+    flush_pending(server)
 
 
 def compact_json(value: Any, limit: int = 100_000) -> str:
@@ -165,7 +253,7 @@ def chat_payload(payload: dict[str, Any], config: dict[str, Any], message: dict[
     return result
 
 
-def handle(payload: dict[str, Any]) -> None:
+def handle(payload: dict[str, Any]) -> bool:
     config = load_config()
     server = str(os.environ.get("MEMORY_SERVER_URL") or config.get("server") or "http://127.0.0.1:8000")
     event = str(payload.get("hook_event_name") or "")
@@ -179,7 +267,7 @@ def handle(payload: dict[str, Any]) -> None:
             "event_id": f"turn:{turn_id}:user", "metadata": common_metadata,
         }
         deliver(server, "/api/v1/chat/messages", chat_payload(payload, config, message, status="active"))
-        return
+        return True
 
     if event == "PostToolUse":
         tool_name = str(payload.get("tool_name") or "tool")
@@ -201,7 +289,7 @@ def handle(payload: dict[str, Any]) -> None:
             "metadata": metadata,
         }
         deliver(server, "/api/v1/chat/messages", chat_payload(payload, config, message))
-        return
+        return True
 
     if event == "Stop" and payload.get("last_assistant_message"):
         assistant = str(payload["last_assistant_message"])
@@ -223,7 +311,7 @@ def handle(payload: dict[str, Any]) -> None:
             "metadata": common_metadata,
         }
         deliver(server, "/api/v1/observations", observation)
-        return
+        return True
 
     if event == "PreCompact":
         # Every completed turn has already been captured by Stop. This durable
@@ -237,16 +325,31 @@ def handle(payload: dict[str, Any]) -> None:
             "metadata": common_metadata,
         }
         deliver(server, "/api/v1/observations", observation)
+        return True
+    return False
 
 
 def main() -> int:
+    payload: Any = None
     try:
         payload = json.load(sys.stdin)
-        handle(payload)
-    except Exception:
+        if not isinstance(payload, dict):
+            raise TypeError("hook payload must be a JSON object")
+        handled = handle(payload)
+        write_diagnostic("capture-status.json", {
+            "timestamp": time.time(),
+            "status": "handled" if handled else "ignored",
+            "pending": len(list(spool_dir().glob("*.json"))),
+            **diagnostic_context(payload),
+        })
+    except Exception as exc:
         # Memory capture must never interrupt Codex work. Failed deliveries are
-        # queued whenever possible; malformed host events are simply ignored.
-        pass
+        # queued whenever possible, while diagnostics preserve the root cause.
+        record_error("main", exc, payload)
+        write_diagnostic("capture-status.json", {
+            "timestamp": time.time(), "status": "error",
+            **diagnostic_context(payload),
+        })
     print(json.dumps({"continue": True}))
     return 0
 
