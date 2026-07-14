@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import memory_worker.main as worker_module
 from memory_common.schemas import ObservationCreate
 from memory_server.db import Base
-from memory_server.models import ProcessingJob
+from memory_server.models import Memory, ProcessingJob
 from memory_server.services import create_observation, recall
 
 
@@ -19,6 +19,8 @@ def test_skill_requires_recall_and_proactive_memory():
     assert "## Recall" in skill
     assert "Before substantial work, call `memory_recall`" in skill
     assert "## Proactive memory" in skill
+    assert "### Memory quality gate" in skill
+    assert "Do not store raw logs, base64 payloads" in skill
     assert "without waiting for the user to ask" in skill
     assert "Do not save transient progress, guesses, secrets" in skill
     assert "Use one stable project identifier" in skill
@@ -52,6 +54,12 @@ def test_proactive_memory_becomes_recallable(tmp_path, monkeypatch):
     worker_module.process(job_id)
 
     with Session(engine) as db:
+        stored_memory = db.query(Memory).one()
+        assert stored_memory.subject
+        assert stored_memory.capability
+        assert stored_memory.action
+        assert stored_memory.outcome
+        assert stored_memory.outcome_status in {"verified", "observed", "expected", "failed", "unknown"}
         results = recall(db, "stable project identifier recall aliases", "OPEM", 5)
         assert results
         assert results[0].memory_type == "decision"

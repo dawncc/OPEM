@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from memory_common.schemas import ChatBatchCreate, ChatMessageCreate, ObservationCreate, ObservationKind, RecallRequest
 import memory_worker.main as worker_module
 import memory_server.tool_grouping as tool_grouping_module
-from memory_worker.main import build_daily_content, memory_type_for, rule_compress, similarity
+from memory_worker.main import _parse_llm_summary, build_daily_content, memory_type_for, rule_compress, similarity
 from datetime import date
 from types import SimpleNamespace
 from memory_server.conversation import build_chat_turns, classify_tool_status, session_display_title, split_message_content, tool_failed
@@ -23,7 +23,9 @@ from memory_server.tool_grouping import TOOL_PROFILE_CACHE_KEY, execution_input,
 from memory_server.tracing import build_session_trace, classify_tool_kind, explicit_duration_ms, format_duration
 from memory_server.costing import estimate_request_cost, format_usd
 from memory_common.pending import append_pending, drain_pending, pending_path
+from memory_common.details import derive_memory_details
 from memory_common.schemas import RecallItem
+from memory_common.titles import concise_memory_title
 from memory_server.services import bm25_scores, create_chat_batch, format_recall_context, reciprocal_rank_fusion, tokenize
 from datetime import datetime, timezone
 
@@ -58,6 +60,131 @@ def test_rule_compression_preserves_source():
     assert "PostgreSQL" in title
     assert "部署简单" in content
     assert "docker-compose.yml" in content
+
+
+def test_memory_title_is_one_line_keyword_aware_and_bounded():
+    title = concise_memory_title(
+        "实时 Hook 漏同步的可靠性修复：旧实现可能丢失事件，需要采用写前队列保证投递",
+        ["采集", "队列"],
+    )
+    assert title.startswith("采集 / 队列 · ")
+    assert len(title) <= 40
+    assert "\n" not in title
+
+    plan_title = concise_memory_title(
+        "工具执行成功：exec 调用输入很长",
+        ["tool-success", "exec"],
+        "类型：经验\n\n工具执行成功：exec\n\n"
+        '调用输入：const result = await tools.update_plan({"explanation":"已完成同步链路诊断"})\n\n成功结果：{}',
+        "tool_success",
+    )
+    assert plan_title == "完成同步链路诊断"
+    assert concise_memory_title(
+        "工具执行成功：wait",
+        content=(
+            "工具执行成功：wait\n\n调用输入：cell_id=39\n\n成功结果："
+            "overallStatus fail; background server is not running"
+        ),
+        memory_type="tool_success",
+    ) == "Codex 健康诊断发现后台服务未运行"
+
+
+def test_memory_title_unwraps_shell_command_and_summarizes_verified_output():
+    sync_content = (
+        "类型：经验\n\n工具执行成功：exec\n\n"
+        '调用输入：const r = await tools.shell_command({"command":"codex-memory-sync '
+        '--since 2026-07-13 --dry-run"}); text(r)\n\n成功结果：'
+        '{"completed_turns":15,"messages":500,"errors":0}'
+    )
+    assert concise_memory_title(
+        "exec 成功执行 shell_command", content=sync_content, memory_type="tool_success",
+    ) == "预检历史同步：15 轮/500 条消息/0 错误"
+
+    test_content = (
+        "工具执行成功：exec\n\n"
+        '调用输入：const r = await tools.shell_command({"command":"pytest -q"})\n\n'
+        "成功结果：66 passed in 6.65s"
+    )
+    assert concise_memory_title(
+        "exec 成功执行 shell_command", content=test_content, memory_type="tool_success",
+    ) == "运行测试，66 项用例全部通过"
+
+    details = derive_memory_details(
+        "exec 成功执行 shell_command", sync_content, "tool_success",
+    )
+    assert details == {
+        "subject": "Codex 历史记忆同步",
+        "capability": "识别可同步的已完成会话与消息范围",
+        "action": "执行 codex-memory-sync 预检",
+        "outcome": "15 轮会话，500 条消息，0 个错误",
+        "outcome_status": "verified",
+    }
+
+
+def test_memory_title_summarizes_solution_capability_and_result():
+    content = (
+        "类型：解决方案\n\n实时 Hook 漏同步的可靠性修复：旧实现可能丢失事件。"
+        "修复为写前队列：先原子落盘再发送。验证：62 项测试通过。"
+    )
+    assert concise_memory_title(
+        "实时 Hook 漏同步的可靠性修复：旧实现可能丢失事件并需要重新设计投递流程",
+        content=content,
+        memory_type="solution",
+    ) == "用写前队列修复实时 Hook 漏同步，62 项测试通过"
+    assert derive_memory_details(
+        "实时 Hook 漏同步的可靠性修复", content, "solution", ["Hook"],
+    ) == {
+        "subject": "实时 Hook 漏同步",
+        "capability": "通过写前队列解决实时 Hook 漏同步",
+        "action": "采用写前队列",
+        "outcome": "62 项测试通过",
+        "outcome_status": "verified",
+    }
+
+    long_content = content.replace(
+        "修复为写前队列",
+        "修复为写前队列：" + "先落盘再发送，" * 40,
+    )
+    long_details = derive_memory_details("实时 Hook 漏同步的可靠性修复", long_content, "solution", ["Hook"])
+    assert long_details["outcome"] == "62 项测试通过"
+    assert long_details["outcome_status"] == "verified"
+
+
+def test_memory_title_uses_type_specific_value_for_decisions_and_problems():
+    assert concise_memory_title(
+        "数据库方案讨论包含很多背景和候选项，需要形成最终选择并记录后续适用范围",
+        content="类型：决策\n\n使用 PostgreSQL 保存跨机器记忆。原因是需要并发写入。",
+        memory_type="decision",
+    ) == "使用 PostgreSQL 保存跨机器记忆"
+    assert concise_memory_title(
+        "同步异常排查记录包含大量现场信息和命令输出，需要提炼用户真正需要看到的问题",
+        content="类型：问题\n\n历史同步遗漏已完成会话，导致首页缺少最新记录。",
+        memory_type="problem",
+    ) == "发现问题：历史同步遗漏已完成会话，导致首页缺少最新记录"
+
+
+def test_llm_summary_requires_exact_source_evidence():
+    source = "决定使用 PostgreSQL。原因是需要并发写入。"
+    valid = _parse_llm_summary(
+        '{"title":"使用 PostgreSQL","conclusion":"采用 PostgreSQL",'
+        '"context":"数据库选型","rationale":"需要并发写入",'
+        '"scope":"服务端","unresolved":"未记录",'
+        '"evidence":["决定使用 PostgreSQL。","原因是需要并发写入。"]}',
+        source,
+    )
+    assert valid is not None
+    assert "原文依据" in valid[1]
+    assert _parse_llm_summary(
+        '{"title":"错误总结","conclusion":"采用 Redis","evidence":["原文不存在"]}',
+        source,
+    ) is None
+    long_title = _parse_llm_summary(
+        '{"title":"这是一个明显超过限制而且包含很多无关背景过程信息的超长记忆标题需要被强制缩短",'
+        '"conclusion":"采用 PostgreSQL","evidence":["决定使用 PostgreSQL。"]}',
+        source,
+    )
+    assert long_title is not None
+    assert len(long_title[0]) <= 40
 
 
 def test_pending_queue_retries_without_losing_tail(tmp_path, monkeypatch):
@@ -115,6 +242,8 @@ def test_daily_summary_groups_decisions_and_solutions():
         "demo", date(2026, 7, 11), [Item("decision", "Use SQLite"), Item("solution", "Run a Python worker")], [Mem()]
     )
     assert "2026-07-11" in content
+    assert "今日概览" in content
+    assert "长期记忆更新" in content
     assert decisions == ["Use SQLite"]
     assert learnings == ["Run a Python worker"]
     assert unresolved == []

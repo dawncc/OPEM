@@ -11,6 +11,8 @@ from difflib import SequenceMatcher
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession, selectinload
 
+from memory_common.config import get_settings
+from memory_common.details import derive_memory_details
 from memory_common.schemas import ChatBatchCreate, MemoryFeedbackCreate, ObservationCreate, RecallItem
 
 from .models import ChatMessage, Memory, MemoryFeedback, MemorySource, Observation, ProcessingJob, Project, RecallEvent, Session, TaskRun
@@ -114,7 +116,6 @@ def create_recall_event(
 
 def query_embedding(value: str) -> list[float] | None:
     global _embedding_model
-    from memory_common.config import get_settings
     settings = get_settings()
     if not settings.memory_embedding_enabled:
         return None
@@ -450,9 +451,15 @@ def recall(
         details = {name: round(values[index], 4) for name, values in algorithm_scores.items() if values[index] > 0}
         details.update({"查询覆盖": round(coverage, 4), "重要度": round(memory.importance / 5, 4), "新鲜度": round(freshness, 4)})
         sessions = sorted({source.observation.session.external_session_id for source in memory.sources if source.observation.session})
+        display_details = derive_memory_details(memory.title, memory.content, memory.memory_type, memory.concepts)
         item = RecallItem(
             memory_id=memory.id, title=memory.title, content=memory.content,
             memory_type=memory.memory_type, project=memory_project.name,
+            subject=memory.subject or display_details["subject"],
+            capability=memory.capability or display_details["capability"],
+            action=memory.action or display_details["action"],
+            outcome=memory.outcome or display_details["outcome"],
+            outcome_status=memory.outcome_status if memory.outcome_status != "unknown" else display_details["outcome_status"],
             concepts=memory.concepts or [], files=memory.files or [], importance=memory.importance,
             confidence=memory.confidence, score=round(min(score, 1.0), 4),
             matched_by=matched_by[index], score_details=details,

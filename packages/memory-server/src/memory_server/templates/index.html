@@ -7,7 +7,7 @@
     <h1 class="page-title">你的个人演进记忆</h1>
     <p class="subtitle">集中查看跨设备的对话、决策与长期知识，让每一次工作都能被重新找到。</p>
   </div>
-  <div class="actions"><a class="button" href="/calendar">查看日历</a><a class="button primary" href="/search">搜索记忆</a></div>
+  <div class="actions"><a class="button" href="/calendar">查看日历</a><a class="button primary" href="/memories">浏览记忆</a></div>
 </section>
 
 <section class="stats-grid" aria-label="数据概览">
@@ -34,9 +34,9 @@
 
 <div class="layout-two">
   <section class="section flush">
-    <div class="section-header"><h2 class="section-title">最近记忆</h2><a class="section-note" href="/search">查看全部 →</a></div>
+    <div class="section-header"><h2 class="section-title">最近记忆</h2><a class="section-note" href="/memories">查看全部 →</a></div>
     <div class="table-wrap"><table><thead><tr><th>项目</th><th>标题</th><th>类型</th><th>更新时间</th></tr></thead><tbody>
-      {% for m,p in memories %}<tr><td class="muted">{{ p.name }}</td><td><a class="table-title" href="/memories/{{ m.id }}">{{ m.title }}</a></td><td><span class="badge" data-type="{{ m.memory_type }}">{{ m.memory_type }}</span></td><td class="muted nowrap">{{ m.updated_at|pretty_datetime }}</td></tr>{% else %}<tr><td colspan="4"><div class="empty-state">暂无 Memory</div></td></tr>{% endfor %}
+      {% for m,p in memories %}<tr><td class="muted">{{ p.name }}</td><td><a class="table-title" href="/memories/{{ m.id }}">{{ m.title|memory_title(m.concepts, m.content, m.memory_type) }}</a></td><td><span class="badge" data-type="{{ m.memory_type }}">{{ m.memory_type }}</span></td><td class="muted nowrap">{{ m.updated_at|pretty_datetime }}</td></tr>{% else %}<tr><td colspan="4"><div class="empty-state">暂无 Memory</div></td></tr>{% endfor %}
     </tbody></table></div>
   </section>
 

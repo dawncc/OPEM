@@ -8,12 +8,14 @@ from uuid import UUID
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session as DbSession, contains_eager, defer, selectinload
 
 from memory_common.config import get_settings
+from memory_common.details import derive_memory_details, outcome_status_label
+from memory_common.titles import concise_memory_title
 from memory_common.schemas import (
     ChatBatchCreate, ChatBatchResponse, HealthResponse, MemoryFeedbackCreate,
     MemoryFeedbackResponse, ObservationCreate, OutcomeEvidenceCreate,
@@ -58,7 +60,39 @@ def pretty_datetime(value: datetime | None) -> str:
     return value.strftime("%Y-%m-%d %H:%M") if value else "—"
 
 
+def split_memory_sections(content: str) -> list[tuple[str, str]]:
+    headings = {"结论", "背景", "背景与依据", "原因", "适用范围", "待确认", "原文依据"}
+    sections: list[tuple[str, list[str]]] = []
+    current_heading: str | None = None
+    current_lines: list[str] = []
+    for line in content.strip().splitlines():
+        stripped = line.strip()
+        if stripped in headings:
+            if current_heading is not None:
+                sections.append((current_heading, current_lines))
+            current_heading, current_lines = stripped, []
+        elif current_heading is not None:
+            current_lines.append(line)
+    if current_heading is not None:
+        sections.append((current_heading, current_lines))
+    normalized = [(heading, "\n".join(lines).strip()) for heading, lines in sections if "\n".join(lines).strip()]
+    if normalized:
+        return normalized
+
+    legacy = content.strip()
+    if legacy.startswith("类型："):
+        _, _, legacy = legacy.partition("\n")
+        legacy = legacy.strip()
+    body, marker, related_files = legacy.partition("\n\n相关文件：")
+    result = [("结论", body.strip())] if body.strip() else []
+    if marker and related_files.strip():
+        result.append(("适用范围", related_files.strip()))
+    return result or [("记忆内容", content.strip())]
+
+
 templates.env.filters["pretty_datetime"] = pretty_datetime
+templates.env.filters["memory_title"] = concise_memory_title
+templates.env.filters["outcome_status_label"] = outcome_status_label
 templates.env.filters["duration"] = format_duration
 templates.env.filters["usd"] = format_usd
 
@@ -381,14 +415,57 @@ def memory_page(request: Request, memory_id: UUID, db: DbSession = Depends(get_d
     if not memory:
         raise HTTPException(404)
     project = db.get(Project, memory.project_id)
-    return templates.TemplateResponse(request, "memory.html", {"memory": memory, "project": project})
+    memory_details = derive_memory_details(memory.title, memory.content, memory.memory_type, memory.concepts)
+    for key in ("subject", "capability", "action", "outcome"):
+        memory_details[key] = getattr(memory, key) or memory_details[key]
+    if memory.outcome_status != "unknown":
+        memory_details["outcome_status"] = memory.outcome_status
+    return templates.TemplateResponse(request, "memory.html", {
+        "memory": memory, "project": project,
+        "memory_details": memory_details,
+        "memory_sections": split_memory_sections(memory.content),
+    })
 
 
-@app.get("/search", response_class=HTMLResponse)
-def search_page(request: Request, q: str = Query(default=""), project: str | None = None, db: DbSession = Depends(get_db)):
-    results = recall(db, q, project, 50) if q.strip() else []
+@app.get("/memories", response_class=HTMLResponse)
+def memories_page(request: Request, q: str = Query(default=""), project: str | None = None, db: DbSession = Depends(get_db)):
+    query = q.strip()
+    results = recall(db, query, project, 50) if query else []
+    recent_stmt = (
+        select(
+            Memory, Project,
+            func.substr(Memory.content, 1, 600).label("content_preview"),
+            func.substr(Memory.content, 1, 4000).label("title_context"),
+            func.length(Memory.content).label("content_length"),
+        )
+        .options(defer(Memory.content), defer(Memory.search_text), defer(Memory.embedding))
+        .join(Project, Memory.project_id == Project.id)
+        .order_by(Memory.updated_at.desc())
+    )
+    if project:
+        recent_stmt = recent_stmt.where(Project.name == project)
+    recent_memories = db.execute(recent_stmt.limit(100)).all() if not query else []
+    recent_details = {}
+    for memory, _, _, title_context, _ in recent_memories:
+        details = derive_memory_details(memory.title, title_context, memory.memory_type, memory.concepts)
+        for key in ("subject", "capability", "action", "outcome"):
+            details[key] = getattr(memory, key) or details[key]
+        if memory.outcome_status != "unknown":
+            details["outcome_status"] = memory.outcome_status
+        recent_details[memory.id] = details
     projects = db.scalars(select(Project).order_by(Project.name)).all()
-    return templates.TemplateResponse(request, "search.html", {"q": q, "selected_project": project, "projects": projects, "results": results})
+    return templates.TemplateResponse(request, "memories.html", {
+        "q": query, "selected_project": project, "projects": projects,
+        "results": results, "recent_memories": recent_memories, "recent_details": recent_details,
+    })
+
+
+@app.get("/search")
+def search_page(q: str = Query(default=""), project: str | None = None):
+    """Keep old bookmarks working while making Memory the primary surface."""
+    params = {key: value for key, value in {"q": q.strip(), "project": project}.items() if value}
+    target = f"/memories?{urlencode(params)}" if params else "/memories"
+    return RedirectResponse(target, status_code=307)
 
 
 @app.get("/calendar", response_class=HTMLResponse)

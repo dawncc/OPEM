@@ -46,6 +46,29 @@ Do not save transient progress, guesses, secrets, raw tool output, or facts that
 
 Write each record with the conclusion, background, reason, applicability, and relevant files. Use `decision`, `learning`, `problem`, or `solution` precisely. Use importance 5 for project-wide constraints, 4 for durable decisions and fixes, 3 for normal learnings, and 1 or 2 for narrow observations.
 
+Start complex records with a 12–32 character, single-line title that states the object, actual capability or action, and verified result. For tool-derived records, unwrap proxy tools such as `exec`, identify the inner tool and meaningful parameters, then incorporate the useful output evidence. Prefer “预检历史同步：15轮/500条消息，0错误” over “exec 成功执行 shell_command”. For decisions, problems, solutions, and learnings, state what changed or was learned and the expected or verified outcome. Never use raw logs, commands, generic success labels, or background narrative as the title.
+
+### Memory quality gate
+
+Before submitting a record:
+
+1. Ground the conclusion in a user statement, current repository evidence, a deterministic check, or explicit outcome evidence. Do not promote guesses, model inferences, or unverified tool output to facts.
+2. Cover the durable fields that exist in the evidence: conclusion, background, reason, applicability, unresolved work, relevant files, and the date or version when freshness matters. Write `not recorded` instead of filling a missing field by inference.
+3. Distill useful tool results into a conclusion plus the exact command, file, test, or outcome that supports it. Do not store raw logs, base64 payloads, or routine successful calls as standalone knowledge.
+4. Keep conflicting or superseded claims separate and state the conflict, time, and sources. Do not silently overwrite evidence or claim a single source of truth without verification.
+5. Prefer one focused memory per reusable conclusion. Split unrelated conclusions; consolidate only when they describe the same fact or workflow.
+
+Use a concise record shape when the content is complex:
+
+```text
+Conclusion: ...
+Background: ...
+Reason: ...
+Applies to: ...
+Evidence: test, command, file, session, or user confirmation
+Unresolved: ...
+```
+
 ## Conversation archive and session end
 
 1. Preserve the complete conversation with `memory_chat_submit`. Include every available user, assistant, system, and tool message in chronological order. Include top-level `duration_ms` whenever exact timing is known. For tool messages, include available `tool_name`, `status`, `exit_code`, `is_error`, `input` or `command`, and `stderr` metadata.

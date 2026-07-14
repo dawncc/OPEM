@@ -84,6 +84,11 @@ class RecallItem(BaseModel):
     title: str
     content: str
     memory_type: str
+    subject: str = ""
+    capability: str = ""
+    action: str = ""
+    outcome: str = ""
+    outcome_status: str = "unknown"
     project: str
     concepts: list[str]
     files: list[str]
